@@ -1,0 +1,11 @@
+name = "CIGARStrings"
+uuid = "e5b51f81-6ffd-4e20-bbec-f118e37ea906"
+version = "0.1.0"
+authors = ["Jakob Nybo Nissen <jakobnybonissen@gmail.com>"]
+
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+MemViews = "a791c907-b98b-4e44-8f4d-e4c2362c6b2f"
+
+[compat]
+BenchmarkTools = "1.5.0"
