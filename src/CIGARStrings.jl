@@ -6,7 +6,7 @@ export CIGAR,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref
 
-public CIGARError, CIGARErrorType, Errors
+public CIGARError, CIGARErrorType, Errors, try_parse
 
 using MemoryViews: ImmutableMemoryView, MemoryView
 
@@ -297,7 +297,6 @@ function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
     is_first = true
     last_was_H = false
     next_must_be_H = false
-    len = 0
     n = 0
     for i in eachindex(mem)
         b = @inbounds mem[i]
@@ -388,7 +387,7 @@ struct Translation
 end
 
 function Translation(kind::TranslationKind, pos::Int)
-    unsigned(pos) > 0x0fffffffffffffff && error() # TODO
+    unsigned(pos) > 0x0fffffffffffffff && error("Cannot translate position > 1152921504606846975")
     Translation(unsafe, kind, pos)
 end
 
@@ -444,7 +443,7 @@ function count_matches(x::CIGAR, mismatches::Int)::Int
         n_M += (i.op === OP_M) * (i.len % UInt)
     end
     if mismatches > n_M + n_X
-        error() # TODO
+        error("Mismatches exceed number of possible mismatches in the CIGAR")
     end
     (n_Eq % Int) + (n_M % Int - mismatches + n_X % Int)
 end
@@ -473,25 +472,33 @@ end
     get_dst::Function,
     prev_anchor::Anchor
 )::Translation
+    kind = outside
     for element::CIGARElement in CIGARElement_iter
         anchor = advance(prev_anchor, element)
         if get_src(anchor) ≥ target
+            in(element.op, (OP_S, OP_H)) && return outside_translation
             # We know the src must have been incremented to at or above target by this element.
             # If the dst was also incremented, we might have overshot.
-            return if get_dst(anchor) > get_dst(prev_anchor)
-                position = get_dst(prev_anchor) + (target - get_src(prev_anchor))
-                iszero(position) ? outside_translation : Translation(unsafe, pos, position)
+            if get_dst(anchor) > get_dst(prev_anchor)
+                kind = pos
+                break
             # If on the other hand the ref was not incremented, then we have hit
             # an element that increments our src (query) but not dst (ref),
             # and so we just report a gap from our previous anchor's dst.
             else
-                position = Int(get_dst(prev_anchor))
-                iszero(position) ? outside_translation : Translation(unsafe, gap, position)
+                kind = gap
+                break
             end
         end
         prev_anchor = anchor
     end
-    outside_translation
+    if kind == outside
+        outside_translation
+    elseif kind == pos
+        Translation(unsafe, pos, get_dst(prev_anchor) + (target - get_src(prev_anchor)))
+    else
+        Translation(unsafe, gap, Int(get_dst(prev_anchor)))
+    end
 end
 
 function query_to_ref(x::CIGAR, pos::Int)
