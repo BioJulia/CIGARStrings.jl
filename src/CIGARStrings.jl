@@ -32,6 +32,39 @@ end # baremodule
 
 using .Errors: CIGARErrorType
 
+"""
+    CIGARErrorType
+
+Single-byte enum representing the different kind of errors returned or thrown by
+the package CIGARStrings.
+This currently implemented list of error kinds is not exhaustive, in that more
+could be added in minor versions of this package.
+
+See also: [`CIGARError`](@ref)
+"""
+CIGARErrorType
+
+"""
+    CIGARError
+
+Exception kind thrown by the package CIGARStrings.
+`CIGARError`s contain two properties: `.kind`, returning a [`CIGARErrorType`](@ref),
+and `.index`, returning an `Int`, pointing to the approximate byte index where the
+exception was encountered.
+
+Neither the kind nor the index are guaranteed to be stable for any given error
+condition across minor versions of this package.
+
+```jldoctest
+julia> ce = try_parse(CIGAR, "15M9");
+
+julia> ce.index
+4
+
+julia> ce.kind
+Truncated::CIGARErrorType = 0x05
+```
+"""
 struct CIGARError <: Exception
     index::Int
     kind::CIGARErrorType
@@ -198,7 +231,7 @@ function Base.getproperty(x::CIGARElement, sym::Symbol)
         error("No such field in CIGARElement: ", sym)
     end
 end
-Base.propertynames(x::CIGARElement) = (:len, :op)
+Base.propertynames(::CIGARElement) = (:len, :op)
 
 """
     CIGAR
@@ -285,6 +318,25 @@ end
 Base.length(x::CIGAR) = x.n_ops % Int
 Base.eltype(::Type{CIGAR}) = CIGARElement
 
+"""
+    try_parse(::Type{CIGAR}, x)::Union{CIGAR, CIGARError}
+
+Cast `x` to a `MemoryView{UInt8}`, and try parsing a [`CIGAR`](@ref) from it.
+If the parsing is unsuccessful, return a [`CIGARError`](@ref)
+
+# Examples
+```jldoctest
+julia> c = try_parse(CIGAR, "2S1M9I");
+
+julia> c isa CIGAR # success
+true
+
+julia> c = tryparse(CIGAR, "1S7H9M1S");
+
+julia> c.kind
+InvalidHardClip::CIGARErrorType = 0x03
+```
+"""
 function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
     mem = ImmutableMemoryView(x)::ImmutableMemoryView{UInt8}
     # H must be either first or last
