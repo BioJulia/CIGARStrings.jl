@@ -4,11 +4,11 @@ export CIGAR,
     OP_M, OP_I, OP_D, OP_N, OP_S, OP_H, OP_P, OP_Eq, OP_X, CIGAROp,
     CIGARElement, ref_length, aln_length, query_length, aln_identity,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
-    aln_to_query, aln_to_ref
+    aln_to_query, aln_to_ref, Translation
 
-public CIGARError, CIGARErrorType, Errors, try_parse
+public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap, TranslationKind
 
-using MemoryViews: ImmutableMemoryView, MemoryView
+using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView
 
 struct Unsafe end
 const unsafe = Unsafe()
@@ -17,16 +17,16 @@ const unsafe = Unsafe()
 
 baremodule Errors
 
-using Base: @enum
+    using Base: @enum
 
-@enum CIGARErrorType::UInt8 begin
-    IntegerOverflow
-    InvalidOperation
-    ZeroLength
-    InvalidHardClip
-    InvalidSoftClip
-    Truncated
-end
+    @enum CIGARErrorType::UInt8 begin
+        IntegerOverflow
+        InvalidOperation
+        ZeroLength
+        InvalidHardClip
+        InvalidSoftClip
+        Truncated
+    end
 
 end # baremodule
 
@@ -56,7 +56,7 @@ Neither the kind nor the index are guaranteed to be stable for any given error
 condition across minor versions of this package.
 
 ```jldoctest
-julia> ce = try_parse(CIGAR, "15M9");
+julia> ce = CIGARStrings.try_parse(CIGAR, "15M9");
 
 julia> ce.index
 4
@@ -88,7 +88,7 @@ function Base.showerror(io::IO, error::CIGARError)
     else
         unreachable()
     end
-    print(io, "Error around byte ", error.index, ": ", s)
+    return print(io, "Error around byte ", error.index, ": ", s)
 end
 
 """
@@ -118,6 +118,8 @@ then the positions are `(0, 9, 9)` after.
 | 7 | `Q R A`  |`OP_Eq`  | =    | Alignment match, not mismatch                        |
 | 8 | `Q R A`  |`OP_X`   | X    | Alignment mismatch                                   |
 
+See also: [`CIGARElement`](@ref)
+
 # Extended help
 * `M` means a match or a mismatch. By default, most programs will emit `M`
   instead of `X` or `=`, since the important part of the CIGAR is where the
@@ -141,17 +143,19 @@ primitive type CIGAROp 8 end
 const (STRING_LUT, BYTE_LUT) = let
     string_lut = Memory{String}(undef, 9)
     byte_lut = Memory{UInt8}(undef, 9)
-    for (i, (name, doc)) in enumerate([
-        ("M", "Alignment match or mismatch"),
-        ("I", "Insertion relative to the reference"),
-        ("D", "Deletion relative to the reference"),
-        ("N", "Region skipped from the reference (usually an intron)"),
-        ("S", "Soft clip (clipped sequence present in query)"),
-        ("H", "Hard clip (clipped sequence not present in query)"),
-        ("P", "Padding"),
-        ("Eq", "Alignment match, not mismatch"),
-        ("X", "Alignment mismatch"),
-    ])
+    for (i, (name, doc)) in enumerate(
+            [
+                ("M", "Alignment match or mismatch"),
+                ("I", "Insertion relative to the reference"),
+                ("D", "Deletion relative to the reference"),
+                ("N", "Region skipped from the reference (usually an intron)"),
+                ("S", "Soft clip (clipped sequence present in query)"),
+                ("H", "Hard clip (clipped sequence not present in query)"),
+                ("P", "Padding"),
+                ("Eq", "Alignment match, not mismatch"),
+                ("X", "Alignment mismatch"),
+            ]
+        )
         string_lut[i] = name
         sym = Symbol("OP_", name)
         val = reinterpret(CIGAROp, UInt8(i - 1))
@@ -187,6 +191,8 @@ Access the operation and the length with the properties `.op` and `.len`.
 Note that currently, the largest supported length is 268435455.
 Operations cannot have length zero.
 
+See also: [`CIGAR`](@ref), [`CIGAROp`](@ref)
+
 # Examples
 ```jldoctest
 julia> e = CIGARElement(OP_X, 3)
@@ -198,8 +204,6 @@ julia> e.len
 julia> e.op
 OP_X
 ```
-
-See also: [`CIGAR`](@ref), [`CIGAROp`](@ref)
 """
 struct CIGARElement
     # 4 upper bits: CIGAROp, 28 lower: Value.
@@ -207,7 +211,7 @@ struct CIGARElement
 
     CIGARElement(::Unsafe, x::UInt32) = new(x)
     function CIGARElement(::Unsafe, op::CIGAROp, len::UInt32)
-        new(((reinterpret(UInt8, op) % UInt32) << 28) | len)
+        return new(((reinterpret(UInt8, op) % UInt32) << 28) | len)
     end
 end
 
@@ -215,15 +219,15 @@ function CIGARElement(op::CIGAROp, len::Integer)
     ulen = UInt32(len)::UInt32
     ulen > 0x0fffffff && error("CIGARStrings only support cigar operations of length 268435455")
     iszero(ulen) && error("CIGAR cannot have zero-length element")
-    CIGARElement(unsafe, op, ulen)
+    return CIGARElement(unsafe, op, ulen)
 end
 
 function Base.show(io::IO, x::CIGARElement)
-    print(io, typeof(x), '(', x.op, ", ", x.len, ')')
+    return print(io, typeof(x), '(', x.op, ", ", x.len, ')')
 end
 
 function Base.getproperty(x::CIGARElement, sym::Symbol)
-    if sym === :len
+    return if sym === :len
         (getfield(x, :x) & 0x0fffffff) % Int
     elseif sym === :op
         reinterpret(CIGAROp, (getfield(x, :x) >>> 28) % UInt8)
@@ -266,28 +270,28 @@ struct CIGAR
     query_len::UInt32
 
     function CIGAR(
-        ::Unsafe,
-        mem::ImmutableMemoryView{UInt8},
-        n_ops::UInt32,
-        aln_len::UInt32,
-        ref_len::UInt32,
-        query_len::UInt32,
-    )
-        new(mem, n_ops, aln_len, ref_len, query_len)
+            ::Unsafe,
+            mem::ImmutableMemoryView{UInt8},
+            n_ops::UInt32,
+            aln_len::UInt32,
+            ref_len::UInt32,
+            query_len::UInt32,
+        )
+        return new(mem, n_ops, aln_len, ref_len, query_len)
     end
 end
 
 function CIGAR(x)
     y = try_parse(CIGAR, x)
-    y isa CIGARError ? throw(y) : y
+    return y isa CIGARError ? throw(y) : y
 end
 
-MemoryView(x::CIGAR) = x.mem
+MemoryViews.MemoryView(x::CIGAR) = x.mem
 
 function Base.iterate(
-    x::CIGAR,
-    state::Int=1
-)::Union{Tuple{CIGARElement, Int}, Nothing}
+        x::CIGAR,
+        state::Int = 1
+    )::Union{Tuple{CIGARElement, Int}, Nothing}
     mem = x.mem
     len = length(mem)
     state > len && return nothing
@@ -303,7 +307,7 @@ function Base.iterate(
             return (CIGARElement(unsafe, op, n % UInt32), i + 1)
         end
     end
-    unreachable()
+    return unreachable()
 end
 
 # TODO: Limit width for long cigars
@@ -312,7 +316,7 @@ function Base.show(io::IO, x::CIGAR)
     print(buf, summary(x), "(\"")
     write(buf, MemoryView(x))
     print(buf, "\")")
-    write(io, take!(buf))
+    return write(io, take!(buf))
 end
 
 Base.length(x::CIGAR) = x.n_ops % Int
@@ -326,12 +330,12 @@ If the parsing is unsuccessful, return a [`CIGARError`](@ref)
 
 # Examples
 ```jldoctest
-julia> c = try_parse(CIGAR, "2S1M9I");
+julia> c = CIGARStrings.try_parse(CIGAR, "2S1M9I");
 
 julia> c isa CIGAR # success
 true
 
-julia> c = tryparse(CIGAR, "1S7H9M1S");
+julia> c = CIGARStrings.try_parse(CIGAR, "1S7H9M1S");
 
 julia> c.kind
 InvalidHardClip::CIGARErrorType = 0x03
@@ -374,7 +378,7 @@ function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
                 if !is_first && !last_was_H
                     next_must_be_H = true
                 end
-            end 
+            end
             c = consumes(op)
             n_ops += 1
             ref_len += c.ref * n
@@ -387,11 +391,11 @@ function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
     end
     last_was_num && return CIGARError(lastindex(mem), Errors.Truncated)
     max(aln_len, n_ops) > typemax(UInt32) && return CIGARError(lastindex(mem), Errors.IntegerOverflow)
-    CIGAR(unsafe, mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
+    return CIGAR(unsafe, mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
 end
 
 function Base.print(out::IO, cigar::CIGAR)
-    write(out, cigar.mem)
+    return write(out, cigar.mem)
 end
 
 const CONSUMES = let
@@ -412,7 +416,7 @@ const CONSUMES = let
 end
 
 """
-    consumes(x::CIGAROp) -> @NamedTuple{query::Bool, ref::Bool, aln::Bool}
+    consumes(x::CIGAROp)::@NamedTuple{query::Bool, ref::Bool, aln::Bool}
 
 Return whether the given CIGAROp consumes (i.e. uses up) bases of the query,
 reference, and alignment, respectively.
@@ -426,11 +430,57 @@ function consumes(x::CIGAROp)::@NamedTuple{query::Bool, ref::Bool, aln::Bool}
     query = isodd(n)
     ref = isodd(n >>> 1)
     aln = isodd(n >>> 2)
-    (;query, ref, aln)
+    return (; query, ref, aln)
 end
 
-@enum TranslationKind::UInt8 outside pos gap 
+"""
+    TranslationKind
 
+This enum has values `outside`, `pos` and `gap`. It represents the result of
+translating a position between query, reference and alignment.
+* If `outside`, the input position translates to a position outside the alignment
+* If `pos`, the input position corresponds to a symbol in the alignment
+* If `gap`, the input position maps to a gap.
+
+See also: [`Translation`](@ref)
+"""
+@enum TranslationKind::UInt8 outside pos gap
+
+"""
+    Translation(kind::TranslationKind, pos::Int)
+
+The result of translating from a position in the coordinate system in the 
+query / reference / alignment to a position in one of the others.
+This type contains two documented properies: `kind::TranslationKind` and `pos::Int`.
+
+* If the position is outside the target coordinate, `.kind == outside` and
+  `pos == 0`
+* If the position maps to a non-gap symbol in the alignment, `kind == pos`, and
+  the position is the `pos`'d symbol in the alignment
+* If the position maps to a gap, `pos` is the position of the symbol before the
+  gap, and `kind == gap`
+
+See also: [`CIGARStrings.TranslationKind`](@ref)
+
+# Examples:
+```jldoctest
+julia> c = CIGAR("2M3D2M2I1M");
+
+julia> for i in 0:8
+           refpos = query_to_ref(c, i)
+           println(refpos.pos, ' ', refpos.kind)
+       end
+0 outside
+1 pos
+2 pos
+6 pos
+7 pos
+7 gap
+7 gap
+8 pos
+0 outside
+```
+"""
 struct Translation
     # 4 upper bits for Kind (in case more is needed)
     x::UInt64
@@ -440,23 +490,23 @@ end
 
 function Translation(kind::TranslationKind, pos::Int)
     unsigned(pos) > 0x0fffffffffffffff && error("Cannot translate position > 1152921504606846975")
-    Translation(unsafe, kind, pos)
+    return Translation(unsafe, kind, pos)
 end
 
 function Translation(::Unsafe, kind::TranslationKind, pos::Int)
     n = (pos % UInt64) | ((reinterpret(UInt8, kind) % UInt64) << 60)
-    Translation(unsafe, n)
+    return Translation(unsafe, n)
 end
 
 const outside_translation = Translation(outside, 0)
 
 function Base.show(io::IO, x::Translation)
-    print(io, summary(x), '(', x.kind, ", ", x.pos, ')')
+    return print(io, summary(x), '(', x.kind, ", ", x.pos, ')')
 end
 
-Base.propertynames(x::Translation) = (:kind, :pos)
+Base.propertynames(::Translation) = (:kind, :pos)
 function Base.getproperty(x::Translation, sym::Symbol)
-    if sym === :pos
+    return if sym === :pos
         (getfield(x, :x) & 0x0fffffffffffffff) % Int
     elseif sym === :kind
         reinterpret(TranslationKind, (getfield(x, :x) >>> 60) % UInt8)
@@ -474,15 +524,61 @@ Base.zero(::Type{Anchor}) = Anchor(0, 0, 0)
 
 function advance(x::Anchor, e::CIGARElement)
     c = consumes(e.op)
-    Anchor(
+    return Anchor(
         x.query + (e.len % UInt32) * c.query,
-        x.ref   + (e.len % UInt32) * c.ref,
-        x.aln   + (e.len % UInt32) * c.aln
+        x.ref + (e.len % UInt32) * c.ref,
+        x.aln + (e.len % UInt32) * c.aln
     )
 end
 
+"""
+    query_length(::CIGAR)::Int
+
+Get the number of biosymbols in the query of the `CIGAR`. This is the same
+as the lengths of all `CIGARElement`s of type `M`, `I`, `S`, `H`, `=` and `X`.
+
+See also: [`ref_length`](@ref), [`aln_length`](@ref)
+
+# Example
+```jldoctest
+julia> query_length(CIGAR("1S5M2D6M2I5M"))
+19
+```
+"""
 query_length(x::CIGAR) = x.query_len % Int
+
+"""
+    ref_length(::CIGAR)::Int
+
+Get the number of biosymbols in the reference of the `CIGAR`. This is the same
+as the lengths of all `CIGARElement`s of type `M`, `D`, `N`, `=` and `X`.
+
+See also: [`query_length`](@ref), [`aln_length`](@ref)
+
+# Example
+```jldoctest
+julia> ref_length(CIGAR("1S5M2D6M2I5M"))
+18
+```
+"""
 ref_length(x::CIGAR) = x.ref_len % Int
+
+"""
+    aln_length(::CIGAR)::Int
+
+Get the number of biosymbols spanned by the alignment of the `CIGAR`. Clips,
+padding and skips are not part of the alignment, but still part of the CIGAR.
+Therefore, the alignment length is the same as the lengths of all `CIGARElement`s
+of type `M`, `I`, `D`, `=` and `X`.
+
+See also: [`query_length`](@ref), [`ref_length`](@ref)
+
+# Example
+```jldoctest
+julia> aln_length(CIGAR("1S5M2D6M2I5M"))
+20
+```
+"""
 aln_length(x::CIGAR) = x.aln_len % Int
 
 function count_matches(x::CIGAR, mismatches::Int)::Int
@@ -497,11 +593,26 @@ function count_matches(x::CIGAR, mismatches::Int)::Int
     if mismatches > n_M + n_X
         error("Mismatches exceed number of possible mismatches in the CIGAR")
     end
-    (n_Eq % Int) + (n_M % Int - mismatches + n_X % Int)
+    return (n_Eq % Int) + (n_M % Int - mismatches + n_X % Int)
 end
 
+"""
+    aln_identity(::CIGAR, mismatches::Int)::Float64
+
+Compute the alignment identity of the `CIGAR`, computed as the number of matches
+(not mismtches) divided by alignment length.
+Since the CIGAR itself may not provide information about the precise number of
+mismatches, the amount of mismatches is an argument.
+The result is always in [0.0, 1.0].
+
+# Example
+```jldoctest
+julia> aln_identity(CIGAR("3M1D3M1I2M"), 2)
+0.6
+```
+"""
 function aln_identity(x::CIGAR, mismatches::Int)::Float64
-    count_matches(x, mismatches) / aln_length(x)
+    return count_matches(x, mismatches) / aln_length(x)
 end
 
 # CIGARs don't support random indexing, so we need to do a linear search.
@@ -509,21 +620,21 @@ end
 # get_src is a function f(x::Anchor) = x.query, and get_dst f(x::Anchor) = x.ref.
 # The comments will, for e.g. query_to_ref, refer to query as src and ref as dst.
 function pos_to_pos(
-    aln::CIGAR,
-    target::Int,
-    get_src::Function,
-    get_dst::Function,
-)::Translation
-    target < 1 ? outside_translation : pos_to_pos_linear(aln, target, get_src, get_dst, zero(Anchor))
+        aln::CIGAR,
+        target::Int,
+        get_src::Function,
+        get_dst::Function,
+    )::Translation
+    return target < 1 ? outside_translation : pos_to_pos_linear(aln, target, get_src, get_dst, zero(Anchor))
 end
 
 @inline function pos_to_pos_linear(
-    CIGARElement_iter,
-    target::Int,
-    get_src::Function,
-    get_dst::Function,
-    prev_anchor::Anchor
-)::Translation
+        CIGARElement_iter,
+        target::Int,
+        get_src::Function,
+        get_dst::Function,
+        prev_anchor::Anchor
+    )::Translation
     kind = outside
     for element::CIGARElement in CIGARElement_iter
         anchor = advance(prev_anchor, element)
@@ -534,9 +645,9 @@ end
             if get_dst(anchor) > get_dst(prev_anchor)
                 kind = pos
                 break
-            # If on the other hand the ref was not incremented, then we have hit
-            # an element that increments our src (query) but not dst (ref),
-            # and so we just report a gap from our previous anchor's dst.
+                # If on the other hand the ref was not incremented, then we have hit
+                # an element that increments our src (query) but not dst (ref),
+                # and so we just report a gap from our previous anchor's dst.
             else
                 kind = gap
                 break
@@ -544,7 +655,7 @@ end
         end
         prev_anchor = anchor
     end
-    if kind == outside
+    return if kind == outside
         outside_translation
     elseif kind == pos
         Translation(unsafe, pos, get_dst(prev_anchor) + (target - get_src(prev_anchor)))
@@ -554,27 +665,27 @@ end
 end
 
 function query_to_ref(x::CIGAR, pos::Int)
-    @inline pos_to_pos(x, pos, i -> i.query, i -> i.ref)
+    return @inline pos_to_pos(x, pos, i -> i.query, i -> i.ref)
 end
 
 function query_to_aln(x::CIGAR, pos::Int)
-    @inline pos_to_pos(x, pos, i -> i.query, i -> i.aln)
+    return @inline pos_to_pos(x, pos, i -> i.query, i -> i.aln)
 end
 
 function ref_to_query(x::CIGAR, pos::Int)
-    @inline pos_to_pos(x, pos, i -> i.ref, i -> i.query)
+    return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.query)
 end
 
 function ref_to_aln(x::CIGAR, pos::Int)
-    @inline pos_to_pos(x, pos, i -> i.ref, i -> i.aln)
+    return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.aln)
 end
 
 function aln_to_query(x::CIGAR, pos::Int)
-    @inline pos_to_pos(x, pos, i -> i.aln, i -> i.query)
+    return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.query)
 end
 
 function aln_to_ref(x::CIGAR, pos::Int)
-    @inline pos_to_pos(x, pos, i -> i.aln, i -> i.ref)
+    return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.ref)
 end
 
 end # module CIGARStrings

@@ -9,34 +9,34 @@ using MemoryViews
 # Instantiation and validation
 @testset "Instantiation" begin
     for good in [
-        "",
-        "500S",
-        "10H",
-        "100M",
-        "5H9S1D1D1D2I9S6H"
-    ]
+            "",
+            "500S",
+            "10H",
+            "100M",
+            "5H9S1D1D1D2I9S6H",
+        ]
         n_elements = count(i -> !in(i, 0x30:0x39), codeunits(good))
         for x in Any[
-            view(good, 1:ncodeunits(good)),
-            codeunits(good),
-            collect(codeunits(good))
-        ]
+                view(good, 1:ncodeunits(good)),
+                codeunits(good),
+                collect(codeunits(good)),
+            ]
             c = CIGAR(x)
             @test length(collect(c)) == n_elements
         end
     end
 
     for (bad, err) in Any[
-        ("H", Errors.ZeroLength),
-        ("1S1H1D", Errors.InvalidHardClip),
-        ("1K", Errors.InvalidOperation),
-        ("11111", Errors.Truncated),
-        ("1HM", Errors.ZeroLength),
-        ("1D1S1I1H", Errors.InvalidSoftClip),
-        ("219382982739847498327912M", Errors.IntegerOverflow),
-        ("1H~~", Errors.InvalidOperation),
-        ("ÆÅA", Errors.InvalidOperation),
-    ]
+            ("H", Errors.ZeroLength),
+            ("1S1H1D", Errors.InvalidHardClip),
+            ("1K", Errors.InvalidOperation),
+            ("11111", Errors.Truncated),
+            ("1HM", Errors.ZeroLength),
+            ("1D1S1I1H", Errors.InvalidSoftClip),
+            ("219382982739847498327912M", Errors.IntegerOverflow),
+            ("1H~~", Errors.InvalidOperation),
+            ("ÆÅA", Errors.InvalidOperation),
+        ]
         @test CIGARStrings.try_parse(CIGAR, bad).kind == err
     end
 end
@@ -60,10 +60,10 @@ end
 
 @testset "Writing" begin
     for s in [
-        "",
-        "15M1=9D",
-        "5S1=3I9I41N13X5P16S4H",
-    ]
+            "",
+            "15M1=9D",
+            "5S1=3I9I41N13X5P16S4H",
+        ]
         c = CIGAR(s)
         @test string(c) == s
         buf = IOBuffer()
@@ -86,7 +86,7 @@ end
     #   1234567890123  4567 8901234567
     # A     12345678901234567890123
     c = CIGAR("2H2S4M4I1X2D1=1I1M1I1D2M4I1X3S")
-    
+
     # Before alignment
     @test is_outside(query_to_aln(c, 0))
     @test is_outside(ref_to_aln(c, 0))
@@ -98,7 +98,7 @@ end
     @test is_outside(query_to_aln(c, 4))
     @test is_outside(query_to_ref(c, 1))
     @test is_outside(query_to_ref(c, 4))
-    
+
     # After alignment
     @test is_outside(query_to_ref(c, 25))
     @test is_outside(query_to_aln(c, 25))
@@ -106,7 +106,7 @@ end
     @test is_outside(aln_to_ref(c, 24))
     @test is_outside(ref_to_query(c, 14))
     @test is_outside(ref_to_aln(c, 14))
-    
+
     # Within alignment
     @test query_to_ref(c, 5) == pos(1)
     @test query_to_aln(c, 5) == pos(1)
@@ -175,7 +175,7 @@ end
     s = "3S1M2D5I5X1H"
     cig = CIGAR(s)
     aln = Alignment(cig, 5)
-    @test BioAlignments.cigar(aln) == s[3:end-2]
+    @test BioAlignments.cigar(aln) == s[3:(end - 2)]
 end
 
 end # module CIGARTests
