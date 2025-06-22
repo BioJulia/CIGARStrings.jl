@@ -10,10 +10,14 @@ DocMeta.setdocmeta!(CIGARStrings, :DocTestSetup, meta; recursive = true)
 makedocs(;
     sitename = "CIGARStrings.jl",
     modules = [CIGARStrings],
-    pages = ["Home" => "index.md"],
+    pages = [
+        "Home" => "index.md",
+        "Reference" => "reference.md",
+    ],
     authors = "Jakob Nybo Nissen",
     checkdocs = :public,
     remotes = nothing,
+    warnonly = Documenter.except(:missing_docs),
 )
 
 deploydocs(;

@@ -52,8 +52,12 @@ Exception kind thrown by the package CIGARStrings.
 and `.index`, returning an `Int`, pointing to the approximate byte index where the
 exception was encountered.
 
-Neither the kind nor the index are guaranteed to be stable for any given error
-condition across minor versions of this package.
+The `kind` and `pos` are stable API, in the sense that e.g. an integer overflow
+at position 55 will always be represented by a
+`CIGARError(55, CIGARStrings.Errors.IntegerOverflow)`.
+However, the same invalid CIGAR string may produce multiple different errors, and which
+error is produced in that case **is NOT** stable API, because that depends on specifics
+parsing internals.
 
 ```jldoctest
 julia> ce = CIGARStrings.try_parse(CIGAR, "15M9");
@@ -95,7 +99,7 @@ end
     CIGAROp
 
 1-byte primitive type representing a CIGAR operation.
-Module-level constants for each value of this type are defined, e.g. `OP_M`.
+Module-level constants for each value of this type are exported, e.g. `OP_M`.
 
 A `CIGAROp` is guaranteed to be a 1-byte primitive with the same bitwise
 representation as a `UInt8` with the value given as `N` in the table below,
@@ -103,8 +107,8 @@ e.g. `reinterpret(UInt8, OP_I) === 0x01`.
 
 The `Consumes` entry below signifies if the operation advances the position
 in the query (`Q`), the reference (`R`) and the alignment (`A`).
-E.g. if the `CIGARElement` `9D` begins at query, ref, aln positions `(0, 0, 0)`,
-then the positions are `(0, 9, 9)` after. 
+E.g. if the `CIGARElement` `9D` begins at query, ref, aln positions `(A, B, C)`,
+then the positions are `(A, B+9, C+9)` after. 
 
 | N | Consumes |Variable | Char | Description                                          |
 |:--|:---------|:--------|:-----|:-----------------------------------------------------|
@@ -124,19 +128,20 @@ See also: [`CIGARElement`](@ref)
 * `M` means a match or a mismatch. By default, most programs will emit `M`
   instead of `X` or `=`, since the important part of the CIGAR is where the
   insertions and deletions are placed. To determine which bases in an `M`
-  are matches and mismatches, the two sequences need to be compared.
-* `N` means that the region is spans an intron, which means the sequence
-  is deleted, but not due to an actual deletion.
+  are matches and mismatches, the two sequences can be compared, base-wise.
+* `N` means that the region is spans an intron, which means the query sequence
+  is deleted, but not due to an actual deletion (which would be a `D` operation).
   It can also be used for other uses where the reference bases is missing
   for another reason than a deletion, if such a use case is found.
 * `S` and `H` are semantically identical. They both signify the end(s) of the
-  sequence which are not part of the alignment. They differ only in whether
-  the covered bases are written in the SEQ field of a SAM record.
+  query sequence which are not part of the alignment. They differ only in whether
+  the clipped bases are written in the SEQ field of a SAM record.
   Typically, hard-clipped bases are present as soft clipped bases in another
   record, such that writing them in both records would be wasteful.
-* `P` is only used for multiple alignment. If a third sequence contains an
+* `P` is only used for a multiple sequence alignment. If a third sequence contains an
   insertion relative to both the query and the reference, the query has a
-  `P` at this position, indicating it's present in neither the query or ref.
+  `P` at this position, indicating it's present in neither the query nor reference.
+* Most alignments only contain the operations `M`, `I`, `D`, `S`.
 """
 primitive type CIGAROp 8 end
 
@@ -245,7 +250,10 @@ that comprise a pairwise alignment.
 Construct a `CIGAR` from any object `x` where `MemoryView(x)` returns a
 `MemoryView{UInt8}`, i.e. any memory-backed bytearray, or string.
 
-See also: [`CIGARStrings.try_parse`](@ref), [`CIGARElement`](@ref)
+Use [`CIGARStrings.try_parse`](@ref) to attempt to parse a `CIGAR` string
+without throwing an exception if the data is invalid.
+
+See also: [`CIGARElement`](@ref)
 
 # Extended help
 CIGAR strings are sequences of `CIGARElement`, from the 5' to the 3' of the
@@ -439,7 +447,7 @@ end
 This enum has values `outside`, `pos` and `gap`. It represents the result of
 translating a position between query, reference and alignment.
 * If `outside`, the input position translates to a position outside the alignment
-* If `pos`, the input position corresponds to a symbol in the alignment
+* If `pos`, the input position corresponds to a non-gap symbol in the alignment
 * If `gap`, the input position maps to a gap.
 
 See also: [`Translation`](@ref)
@@ -449,16 +457,18 @@ See also: [`Translation`](@ref)
 """
     Translation(kind::TranslationKind, pos::Int)
 
-The result of translating from a position in the coordinate system in the 
+The result of translating from a position in the coordinate system of the 
 query / reference / alignment to a position in one of the others.
 This type contains two documented properies: `kind::TranslationKind` and `pos::Int`.
 
-* If the position is outside the target coordinate, `.kind == outside` and
-  `pos == 0`
-* If the position maps to a non-gap symbol in the alignment, `kind == pos`, and
-  the position is the `pos`'d symbol in the alignment
+* If the resulting position is outside the target coordinate, `.kind == outside`
+  and `pos == 0`
+* If the position maps to a non-gap symbol in the other coodinate system,
+  `.kind == pos`, and the position is the `pos`'d symbol in the target coordinate
+  system.
 * If the position maps to a gap, `pos` is the position of the symbol before the
-  gap, and `kind == gap`
+  gap, and `kind == gap`. When translating to the `aln` coordinate system,
+  the kind is never `gap`.
 
 See also: [`CIGARStrings.TranslationKind`](@ref)
 
@@ -664,26 +674,110 @@ end
     end
 end
 
+"""
+    query_to_ref(x::CIGAR, pos::Int)::Int
+
+Get the 1-based reference position aligning to query position `pos`.
+See [`Translation`](@ref) for more details.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3M2D1M4I2M");
+
+julia> query_to_ref(c, 4)
+Translation(pos, 6)
+```
+"""
 function query_to_ref(x::CIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.query, i -> i.ref)
 end
 
+"""
+    query_to_aln(x::CIGAR, pos::Int)::Int
+
+Get the 1-based alignment position aligning to query position `pos`.
+See [`Translation`](@ref) for more details.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3M2D1M4I2M");
+
+julia> query_to_aln(c, 8)
+Translation(pos, 10)
+```
+"""
 function query_to_aln(x::CIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.query, i -> i.aln)
 end
 
+"""
+    ref_to_query(x::CIGAR, pos::Int)::Int
+
+Get the 1-based query position aligning to reference position `pos`.
+See [`Translation`](@ref) for more details.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3M2D1M4I2M");
+
+julia> ref_to_query(c, 7)
+Translation(pos, 9)
+```
+"""
 function ref_to_query(x::CIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.query)
 end
 
+"""
+    ref_to_aln(x::CIGAR, pos::Int)::Int
+
+Get the 1-based alignment position aligning to reference position `pos`.
+See [`Translation`](@ref) for more details.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3M2D1M4I2M");
+
+julia> ref_to_aln(c, 7)
+Translation(pos, 11)
+```
+"""
 function ref_to_aln(x::CIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.aln)
 end
 
+"""
+    aln_to_query(x::CIGAR, pos::Int)::Int
+
+Get the 1-based query position aligning to alignment position `pos`.
+See [`Translation`](@ref) for more details.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3M2D1M4I2M");
+
+julia> aln_to_query(c, 10)
+Translation(pos, 8)
+```
+"""
 function aln_to_query(x::CIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.query)
 end
 
+"""
+    aln_to_ref(x::CIGAR, pos::Int)::Int
+
+Get the 1-based reference position aligning to alignment position `pos`.
+See [`Translation`](@ref) for more details.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3M2D1M4I2M");
+
+julia> aln_to_ref(c, 9)
+Translation(gap, 6)
+```
+"""
 function aln_to_ref(x::CIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.ref)
 end
