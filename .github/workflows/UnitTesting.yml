@@ -12,14 +12,14 @@ jobs:
     strategy:
       matrix:
         julia-version:
-          - [1, 'nightly']
+          - ['1', '1.11']
         os: [ ubuntu-latest, windows-latest, macOS-latest ]
-        arch: [ x64 ]
         include:
           - julia-version: nightly
             julia-arch: x86
             os: ubuntu-latest
             experimental: true
+            fail_ci_if_error: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
