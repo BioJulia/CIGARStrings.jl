@@ -15,7 +15,7 @@ jobs:
       statuses: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@latest
+      - uses: actions/checkout@3
       - uses: julia-actions/setup-julia@latest
         with:
           version: 'nightly'
