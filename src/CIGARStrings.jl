@@ -4,7 +4,7 @@ export CIGAR,
     OP_M, OP_I, OP_D, OP_N, OP_S, OP_H, OP_P, OP_Eq, OP_X, CIGAROp,
     CIGARElement, ref_length, aln_length, query_length, aln_identity,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
-    aln_to_query, aln_to_ref, Translation
+    aln_to_query, aln_to_ref, Translation, count_matches
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap, TranslationKind
 
@@ -591,7 +591,8 @@ julia> aln_length(CIGAR("1S5M2D6M2I5M"))
 """
 aln_length(x::CIGAR) = x.aln_len % Int
 
-function count_matches(x::CIGAR, mismatches::Int)::Int
+function count_matches(x::CIGAR, mismatches::Integer)::Int
+    mismatches = UInt(mismatches)::UInt
     n_M = UInt(0)
     n_X = UInt(0)
     n_Eq = UInt(0)
@@ -603,7 +604,10 @@ function count_matches(x::CIGAR, mismatches::Int)::Int
     if mismatches > n_M + n_X
         error("Mismatches exceed number of possible mismatches in the CIGAR")
     end
-    return (n_Eq % Int) + (n_M % Int - mismatches + n_X % Int)
+    if mismatches < n_X
+        error("Mismatches is lower than minimum possible mismatches in CIGAR")
+    end
+    return (n_Eq % Int) + (n_M - mismatches + n_X) % Int
 end
 
 """

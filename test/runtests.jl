@@ -74,6 +74,64 @@ end
     end
 end
 
+@testset "Query / ref / aln length" begin
+    c = CIGAR("150M")
+    @test query_length(c) == aln_length(c) == ref_length(c) == 150
+
+    c = CIGAR("5M1D5M")
+    @test query_length(c) == 10
+    @test ref_length(c) == 11
+    @test aln_length(c) == 11
+
+    c = CIGAR("4S2M3D2M7I10M")
+    @test query_length(c) == 25
+    @test ref_length(c) == 17
+    @test aln_length(c) == 24
+end
+
+@testset "Count matches" begin
+    # Maximum mismtaches: 15 + 12 == 27
+    # Minimum: 12
+    # 15 + 7 + 12 == 34
+    c = CIGAR("15M9I7=3D12X")
+
+    @test_throws InexactError count_matches(c, -1)
+    @test_throws InexactError count_matches(c, typemin(Int))
+
+    @test_throws Exception count_matches(c, 28)
+    @test_throws Exception count_matches(c, 11)
+
+    @test count_matches(c, 27) == 7
+    @test count_matches(c, 20) == 14
+    @test count_matches(c, 19) == 15
+    @test count_matches(c, 12) == 22
+    
+    c = CIGAR("100M")
+    @test count_matches(c, 0) == 100
+    @test count_matches(c, 1) == 99
+    @test count_matches(c, 97) == 3
+    @test count_matches(c, 100) == 0
+    @test_throws Exception count_matches(c, 101)
+end
+
+@testset "aln identity" begin
+    # Alignment length is 9 + 4 + 3 + 3 + 9 + 12 == 40
+    # Maximum mismatches: 9 + 4 + 3 + 12 == 28
+    # Minimum mismatches: 4
+    c = CIGAR("11S9M4X3D3M9I12M")
+
+    @test_throws Exception aln_identity(c, 29)
+    @test_throws Exception aln_identity(c, 3)
+
+    @test aln_identity(c, 4) == 0.6
+    @test aln_identity(c, 5) == 0.575
+    @test aln_identity(c, 10) == 0.45
+    @test aln_identity(c, 15) == 0.325
+    @test aln_identity(c, 20) == 0.2
+    @test aln_identity(c, 25) == 0.075
+    @test aln_identity(c, 28) == 0.0
+end
+
 @testset "Translate positions" begin
     is_outside(x) = x === CIGARStrings.outside_translation
     pos(n) = CIGARStrings.Translation(CIGARStrings.pos, n)
@@ -85,6 +143,19 @@ end
     #   1234567890123  4567 8901234567
     # A     12345678901234567890123
     c = CIGAR("2H2S4M4I1X2D1=1I1M1I1D2M4I1X3S")
+
+    # Getting properties of Translation object
+    t = query_to_aln(c, 12)
+    @test t.pos == 8
+    @test t.kind == CIGARStrings.pos
+    
+    t = pos(9)
+    @test t.pos == 9
+    @test t.kind == CIGARStrings.pos
+
+    t = gap(304834283)
+    @test t.pos == 304834283
+    @test t.kind == CIGARStrings.gap
 
     # Before alignment
     @test is_outside(query_to_aln(c, 0))
