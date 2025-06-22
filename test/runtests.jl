@@ -2,7 +2,6 @@ module CIGARTests
 
 using CIGARStrings
 using CIGARStrings: Errors
-using BioAlignments
 using Test
 using MemoryViews
 
@@ -169,13 +168,6 @@ end
     @test ref_to_aln(c, 10) == pos(16)
     @test ref_to_aln(c, 12) == pos(18)
     @test ref_to_aln(c, 13) == pos(23)
-end
-
-@testset "Conversion to alignment" begin
-    s = "3S1M2D5I5X1H"
-    cig = CIGAR(s)
-    aln = Alignment(cig, 5)
-    @test BioAlignments.cigar(aln) == s[3:(end - 2)]
 end
 
 end # module CIGARTests
