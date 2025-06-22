@@ -51,6 +51,21 @@ ERROR: Error around byte 4: Invalid operation. Possible values are "MIDNSHP=X".
 [...]
 ```
 
+Since CIGAR strings occur in various bioinformatics file formats, it is expected
+that users of CIGARStrings.jl will construct `CIGAR`s from a view into a buffer storing a chunk of the file.
+
+This is zero-copy, and _ought_ not to allocate (although it currently does, due to [a limitation of the Julia compiler](https://github.com/JuliaLang/julia/issues/53584)):
+
+For example:
+```jldoctest
+julia> data = b"some format with CIGAR: 15M9D18M etc"
+
+julia> buffer = collect(data);
+
+julia> c = CIGAR(view(buffer, 25:32))
+CIGAR("15M9D18M")
+```
+
 ```@docs
 CIGAR
 ```
@@ -155,6 +170,9 @@ Translation(pos, 9)
 julia> aln_to_query(c, 9)
 Translation(pos, 6)
 ```
+
+Note that these operations are in __linear time__, as they scan the CIGAR string from the beginning.
+If the CIGAR string is long, and many of these operations are done on the same string, it may be better to construct another data structure for the alignment, which allows logarithmic-time queries, e.g. the ones in BioAlignments.jl.
 
 ```@docs
 Translation
