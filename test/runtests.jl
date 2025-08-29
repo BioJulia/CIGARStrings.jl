@@ -105,7 +105,7 @@ end
     @test count_matches(c, 20) == 14
     @test count_matches(c, 19) == 15
     @test count_matches(c, 12) == 22
-    
+
     c = CIGAR("100M")
     @test count_matches(c, 0) == 100
     @test count_matches(c, 1) == 99
@@ -148,7 +148,7 @@ end
     t = query_to_aln(c, 12)
     @test t.pos == 8
     @test t.kind == CIGARStrings.pos
-    
+
     t = pos(9)
     @test t.pos == 9
     @test t.kind == CIGARStrings.pos

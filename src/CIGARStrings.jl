@@ -4,7 +4,8 @@ export CIGAR,
     OP_M, OP_I, OP_D, OP_N, OP_S, OP_H, OP_P, OP_Eq, OP_X, CIGAROp,
     CIGARElement, ref_length, aln_length, query_length, aln_identity,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
-    aln_to_query, aln_to_ref, Translation, count_matches
+    aln_to_query, aln_to_ref, Translation, count_matches,
+    BAMCIGAR, AbstractCIGAR
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap, TranslationKind
 
@@ -26,6 +27,7 @@ baremodule Errors
         InvalidHardClip
         InvalidSoftClip
         Truncated
+        NotModFourLength
     end
 
 end # baremodule
@@ -211,12 +213,12 @@ OP_X
 ```
 """
 struct CIGARElement
-    # 4 upper bits: CIGAROp, 28 lower: Value.
+    # 28 upper bits: Value, lower 4 bits: CIGAROp
     x::UInt32
 
     CIGARElement(::Unsafe, x::UInt32) = new(x)
     function CIGARElement(::Unsafe, op::CIGAROp, len::UInt32)
-        return new(((reinterpret(UInt8, op) % UInt32) << 28) | len)
+        return new((reinterpret(UInt8, op) % UInt32) | (len << 4))
     end
 end
 
@@ -233,9 +235,9 @@ end
 
 function Base.getproperty(x::CIGARElement, sym::Symbol)
     return if sym === :len
-        (getfield(x, :x) & 0x0fffffff) % Int
+        (getfield(x, :x) >>> 4) % Int
     elseif sym === :op
-        reinterpret(CIGAROp, (getfield(x, :x) >>> 28) % UInt8)
+        reinterpret(CIGAROp, (getfield(x, :x) % UInt8) & 0x0f)
     else
         error("No such field in CIGARElement: ", sym)
     end
@@ -243,168 +245,18 @@ end
 Base.propertynames(::CIGARElement) = (:len, :op)
 
 """
-    CIGAR
+    abstract type AbstractCIGAR
 
-A CIGAR string represents the sequence of insertions, matches and deletions
-that comprise a pairwise alignment.
-Construct a `CIGAR` from any object `x` where `MemoryView(x)` returns a
-`MemoryView{UInt8}`, i.e. any memory-backed bytearray, or string.
-
-Use [`CIGARStrings.try_parse`](@ref) to attempt to parse a `CIGAR` string
-without throwing an exception if the data is invalid.
-
-See also: [`CIGARElement`](@ref)
-
-# Extended help
-CIGAR strings are sequences of `CIGARElement`, from the 5' to the 3' of the
-query (or N- to C-terminal for amino acids).
-CIGAR strings comprise the entire query, i.e. the sum of lengths of elements
-with the `XMI=SH` operations equals the length of the query.
-
-For example, the query `AGCGTAGCACACC` that aligns from query base 5 and ref
-base 1002, like this:
-
-    Q: 5    TAG--CACACC   13
-    R: 1002 TAGGACAC-CC 1011
-
-Is summarized by the CIGAR `4S3M2D3M1I2M`. The operations `HX=PN` are more rarely
-used, see [`CIGAROp`](@ref) for a description of the operations.
+This abstract type is (not yet) a defined interface.
+Its concrete subtypes are `CIGAR` and `BAMCIGAR`,
+use the concrete subtypes.
 """
-struct CIGAR
-    mem::ImmutableMemoryView{UInt8}
-    n_ops::UInt32
-    aln_len::UInt32
-    ref_len::UInt32
-    query_len::UInt32
+abstract type AbstractCIGAR end
 
-    function CIGAR(
-            ::Unsafe,
-            mem::ImmutableMemoryView{UInt8},
-            n_ops::UInt32,
-            aln_len::UInt32,
-            ref_len::UInt32,
-            query_len::UInt32,
-        )
-        return new(mem, n_ops, aln_len, ref_len, query_len)
-    end
-end
+Base.eltype(::Type{<:AbstractCIGAR}) = CIGARElement
 
-function CIGAR(x)
-    y = try_parse(CIGAR, x)
-    return y isa CIGARError ? throw(y) : y
-end
-
-MemoryViews.MemoryView(x::CIGAR) = x.mem
-
-function Base.iterate(
-        x::CIGAR,
-        state::Int = 1
-    )::Union{Tuple{CIGARElement, Int}, Nothing}
-    mem = x.mem
-    len = length(mem)
-    state > len && return nothing
-    n = 0
-    @inbounds for i in state:len
-        b = mem[i] - 0x30
-        if b < 0x0a
-            n = (10 * n) + b
-        else
-            b -= UInt8('=') - UInt8('0')
-            enc = ((LUT >>> ((4 * b) & 127)) % UInt8) & 0x0f
-            op = reinterpret(CIGAROp, enc)
-            return (CIGARElement(unsafe, op, n % UInt32), i + 1)
-        end
-    end
-    return unreachable()
-end
-
-# TODO: Limit width for long cigars
-function Base.show(io::IO, x::CIGAR)
-    buf = IOBuffer()
-    print(buf, summary(x), "(\"")
-    write(buf, MemoryView(x))
-    print(buf, "\")")
-    return write(io, take!(buf))
-end
-
-Base.length(x::CIGAR) = x.n_ops % Int
-Base.eltype(::Type{CIGAR}) = CIGARElement
-
-"""
-    try_parse(::Type{CIGAR}, x)::Union{CIGAR, CIGARError}
-
-Cast `x` to a `MemoryView{UInt8}`, and try parsing a [`CIGAR`](@ref) from it.
-If the parsing is unsuccessful, return a [`CIGARError`](@ref)
-
-# Examples
-```jldoctest
-julia> c = CIGARStrings.try_parse(CIGAR, "2S1M9I");
-
-julia> c isa CIGAR # success
-true
-
-julia> c = CIGARStrings.try_parse(CIGAR, "1S7H9M1S");
-
-julia> c.kind
-InvalidHardClip::CIGARErrorType = 0x03
-```
-"""
-function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
-    mem = ImmutableMemoryView(x)::ImmutableMemoryView{UInt8}
-    # H must be either first or last
-    # S must be either first or last, or preceded or succeeded by H
-    n_ops = 0
-    aln_len = 0
-    ref_len = 0
-    query_len = 0
-    last_was_num = false
-    is_first = true
-    last_was_H = false
-    next_must_be_H = false
-    n = 0
-    for i in eachindex(mem)
-        b = @inbounds mem[i]
-        b -= 0x30
-        last_was_num = b < 0x0a
-        if last_was_num
-            n = (10 * n) + b
-            n > 0x0fffffff && return CIGARError(i, Errors.IntegerOverflow)
-        else
-            b -= UInt8('=') - UInt8('0')
-            b > (UInt8('X') - UInt8('=')) && return CIGARError(i, Errors.InvalidOperation)
-            enc = ((LUT >>> ((4 * b) & 127)) % UInt8) & 0x0f
-            enc == 0x0f && return CIGARError(i, Errors.InvalidOperation)
-            iszero(n) && return CIGARError(i, Errors.ZeroLength)
-            op = reinterpret(CIGAROp, enc)
-            if op === OP_H
-                if !is_first && i != lastindex(mem)
-                    return CIGARError(i, Errors.InvalidHardClip)
-                end
-            elseif next_must_be_H
-                return CIGARError(i, Errors.InvalidSoftClip)
-            elseif op === OP_S
-                if !is_first && !last_was_H
-                    next_must_be_H = true
-                end
-            end
-            c = consumes(op)
-            n_ops += 1
-            ref_len += c.ref * n
-            query_len += c.query * n
-            aln_len += c.aln * n
-            n = 0
-            last_was_H = op === OP_H
-            is_first = false
-        end
-    end
-    last_was_num && return CIGARError(lastindex(mem), Errors.Truncated)
-    max(aln_len, n_ops) > typemax(UInt32) && return CIGARError(lastindex(mem), Errors.IntegerOverflow)
-    return CIGAR(unsafe, mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
-end
-
-function Base.print(out::IO, cigar::CIGAR)
-    return write(out, cigar.mem)
-end
+include("bytecigar.jl")
+include("bamcigar.jl")
 
 const CONSUMES = let
     x = UInt32(0)
@@ -542,7 +394,7 @@ function advance(x::Anchor, e::CIGARElement)
 end
 
 """
-    query_length(::CIGAR)::Int
+    query_length(::AbstractCIGAR)::Int
 
 Get the number of biosymbols in the query of the `CIGAR`. This is the same
 as the lengths of all `CIGARElement`s of type `M`, `I`, `S`, `H`, `=` and `X`.
@@ -555,10 +407,11 @@ julia> query_length(CIGAR("1S5M2D6M2I5M"))
 19
 ```
 """
-query_length(x::CIGAR) = x.query_len % Int
+function query_length end
+
 
 """
-    ref_length(::CIGAR)::Int
+    ref_length(::AbstractCIGAR)::Int
 
 Get the number of biosymbols in the reference of the `CIGAR`. This is the same
 as the lengths of all `CIGARElement`s of type `M`, `D`, `N`, `=` and `X`.
@@ -571,10 +424,10 @@ julia> ref_length(CIGAR("1S5M2D6M2I5M"))
 18
 ```
 """
-ref_length(x::CIGAR) = x.ref_len % Int
+function ref_length end
 
 """
-    aln_length(::CIGAR)::Int
+    aln_length(::AbstractCIGAR)::Int
 
 Get the number of biosymbols spanned by the alignment of the `CIGAR`. Clips,
 padding and skips are not part of the alignment, but still part of the CIGAR.
@@ -589,9 +442,9 @@ julia> aln_length(CIGAR("1S5M2D6M2I5M"))
 20
 ```
 """
-aln_length(x::CIGAR) = x.aln_len % Int
+function aln_length end
 
-function count_matches(x::CIGAR, mismatches::Integer)::Int
+function count_matches(x::AbstractCIGAR, mismatches::Integer)::Int
     mismatches = UInt(mismatches)::UInt
     n_M = UInt(0)
     n_X = UInt(0)
@@ -611,7 +464,7 @@ function count_matches(x::CIGAR, mismatches::Integer)::Int
 end
 
 """
-    aln_identity(::CIGAR, mismatches::Int)::Float64
+    aln_identity(::AbstractCIGAR, mismatches::Int)::Float64
 
 Compute the alignment identity of the `CIGAR`, computed as the number of matches
 (not mismtches) divided by alignment length.
@@ -625,7 +478,7 @@ julia> aln_identity(CIGAR("3M1D3M1I2M"), 2)
 0.6
 ```
 """
-function aln_identity(x::CIGAR, mismatches::Int)::Float64
+function aln_identity(x::AbstractCIGAR, mismatches::Int)::Float64
     return count_matches(x, mismatches) / aln_length(x)
 end
 
@@ -634,7 +487,7 @@ end
 # get_src is a function f(x::Anchor) = x.query, and get_dst f(x::Anchor) = x.ref.
 # The comments will, for e.g. query_to_ref, refer to query as src and ref as dst.
 function pos_to_pos(
-        aln::CIGAR,
+        aln::AbstractCIGAR,
         target::Int,
         get_src::Function,
         get_dst::Function,
@@ -679,7 +532,7 @@ end
 end
 
 """
-    query_to_ref(x::CIGAR, pos::Int)::Int
+    query_to_ref(x::AbstractCIGAR, pos::Int)::Int
 
 Get the 1-based reference position aligning to query position `pos`.
 See [`Translation`](@ref) for more details.
@@ -692,12 +545,12 @@ julia> query_to_ref(c, 4)
 Translation(pos, 6)
 ```
 """
-function query_to_ref(x::CIGAR, pos::Int)
+function query_to_ref(x::AbstractCIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.query, i -> i.ref)
 end
 
 """
-    query_to_aln(x::CIGAR, pos::Int)::Int
+    query_to_aln(x::AbstractCIGAR, pos::Int)::Int
 
 Get the 1-based alignment position aligning to query position `pos`.
 See [`Translation`](@ref) for more details.
@@ -710,12 +563,12 @@ julia> query_to_aln(c, 8)
 Translation(pos, 10)
 ```
 """
-function query_to_aln(x::CIGAR, pos::Int)
+function query_to_aln(x::AbstractCIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.query, i -> i.aln)
 end
 
 """
-    ref_to_query(x::CIGAR, pos::Int)::Int
+    ref_to_query(x::AbstractCIGAR, pos::Int)::Int
 
 Get the 1-based query position aligning to reference position `pos`.
 See [`Translation`](@ref) for more details.
@@ -728,12 +581,12 @@ julia> ref_to_query(c, 7)
 Translation(pos, 9)
 ```
 """
-function ref_to_query(x::CIGAR, pos::Int)
+function ref_to_query(x::AbstractCIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.query)
 end
 
 """
-    ref_to_aln(x::CIGAR, pos::Int)::Int
+    ref_to_aln(x::AbstractCIGAR, pos::Int)::Int
 
 Get the 1-based alignment position aligning to reference position `pos`.
 See [`Translation`](@ref) for more details.
@@ -746,12 +599,12 @@ julia> ref_to_aln(c, 7)
 Translation(pos, 11)
 ```
 """
-function ref_to_aln(x::CIGAR, pos::Int)
+function ref_to_aln(x::AbstractCIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.aln)
 end
 
 """
-    aln_to_query(x::CIGAR, pos::Int)::Int
+    aln_to_query(x::AbstractCIGAR, pos::Int)::Int
 
 Get the 1-based query position aligning to alignment position `pos`.
 See [`Translation`](@ref) for more details.
@@ -764,12 +617,12 @@ julia> aln_to_query(c, 10)
 Translation(pos, 8)
 ```
 """
-function aln_to_query(x::CIGAR, pos::Int)
+function aln_to_query(x::AbstractCIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.query)
 end
 
 """
-    aln_to_ref(x::CIGAR, pos::Int)::Int
+    aln_to_ref(x::AbstractCIGAR, pos::Int)::Int
 
 Get the 1-based reference position aligning to alignment position `pos`.
 See [`Translation`](@ref) for more details.
@@ -782,7 +635,7 @@ julia> aln_to_ref(c, 9)
 Translation(gap, 6)
 ```
 """
-function aln_to_ref(x::CIGAR, pos::Int)
+function aln_to_ref(x::AbstractCIGAR, pos::Int)
     return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.ref)
 end
 
