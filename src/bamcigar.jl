@@ -6,7 +6,6 @@ const CIGAR_BYTE_LUT = let
     u
 end
 
-# TODO: Show method?
 """
     BAMCIGAR <: AbstractCIGAR
 
@@ -48,6 +47,13 @@ struct BAMCIGAR
         )
         return new(mem, n_ops, aln_len, ref_len, query_len)
     end
+end
+
+function Base.show(io::IO, x::BAMCIGAR)
+    mem = MemoryView(CIGAR(x))
+    print(io, "BAMCIGAR(CIGAR(\"")
+    write(io, mem)
+    return print(io, "\"))")
 end
 
 Base.length(x::BAMCIGAR) = length(x.mem) >>> 2
