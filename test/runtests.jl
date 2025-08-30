@@ -256,7 +256,10 @@ end
 
 @testset "BAMCIGAR specifics" begin
     @testset "Construction" begin
-        @test BAMCIGAR("\xd0\0\0\0\x92\0\0\0") == CIGAR("13M9D")
+        s = "\xd0\0\0\0\x92\0\0\0"
+        @test BAMCIGAR(s) == CIGAR("13M9D")
+        c = BAMCIGAR(s)
+        @test MemoryView(c) == MemoryView(s)
 
         @test CIGARStrings.try_parse(BAMCIGAR, "abc").kind == Errors.NotModFourLength
 
@@ -284,7 +287,11 @@ end
             c2 = CIGAR(bc)
             bc2 = BAMCIGAR(c2)
 
-            @test c == bc == c2 == bc2
+            @test c == c2
+            @test bc == bc2
+            @test c == bc
+            @test c2 == bc2
+            @test c == bc2
         end
     end
 
