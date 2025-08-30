@@ -41,20 +41,22 @@ using MemoryViews
 end
 
 @testset "Iteration" begin
-    cig = CIGAR("1H4S19M33I191P9N1X22=3M1H")
-    elements = collect(cig)
-    @test elements == [
-        CIGARElement(OP_H, 1),
-        CIGARElement(OP_S, 4),
-        CIGARElement(OP_M, 19),
-        CIGARElement(OP_I, 33),
-        CIGARElement(OP_P, 191),
-        CIGARElement(OP_N, 9),
-        CIGARElement(OP_X, 1),
-        CIGARElement(OP_Eq, 22),
-        CIGARElement(OP_M, 3),
-        CIGARElement(OP_H, 1),
-    ]
+    s = "1H4S19M33I191P9N1X22=3M1H"
+    for cig in [CIGAR(s), BAMCIGAR(CIGAR(s))]
+        elements = collect(cig)
+        @test elements == [
+            CIGARElement(OP_H, 1),
+            CIGARElement(OP_S, 4),
+            CIGARElement(OP_M, 19),
+            CIGARElement(OP_I, 33),
+            CIGARElement(OP_P, 191),
+            CIGARElement(OP_N, 9),
+            CIGARElement(OP_X, 1),
+            CIGARElement(OP_Eq, 22),
+            CIGARElement(OP_M, 3),
+            CIGARElement(OP_H, 1),
+        ]
+    end
 end
 
 @testset "Writing" begin
@@ -65,6 +67,7 @@ end
         ]
         c = CIGAR(s)
         @test string(c) == s
+        @test string(BAMCIGAR(c)) == s
         buf = IOBuffer()
         print(buf, c)
         v = take!(buf)
@@ -77,59 +80,67 @@ end
 @testset "Query / ref / aln length" begin
     c = CIGAR("150M")
     @test query_length(c) == aln_length(c) == ref_length(c) == 150
+    bc = BAMCIGAR(c)
+    @test c == bc # test all lengths are the same
 
     c = CIGAR("5M1D5M")
     @test query_length(c) == 10
     @test ref_length(c) == 11
     @test aln_length(c) == 11
+    bc = BAMCIGAR(c)
+    @test c == bc # test all lengths are the same
 
     c = CIGAR("4S2M3D2M7I10M")
     @test query_length(c) == 25
     @test ref_length(c) == 17
     @test aln_length(c) == 24
+    bc = BAMCIGAR(c)
+    @test c == bc # test all lengths are the same
 end
 
 @testset "Count matches" begin
     # Maximum mismtaches: 15 + 12 == 27
     # Minimum: 12
     # 15 + 7 + 12 == 34
-    c = CIGAR("15M9I7=3D12X")
+    s = "15M9I7=3D12X"
+    for c in [CIGAR(s), BAMCIGAR(CIGAR(s))]
+        @test_throws InexactError count_matches(c, -1)
+        @test_throws InexactError count_matches(c, typemin(Int))
 
-    @test_throws InexactError count_matches(c, -1)
-    @test_throws InexactError count_matches(c, typemin(Int))
+        @test_throws Exception count_matches(c, 28)
+        @test_throws Exception count_matches(c, 11)
 
-    @test_throws Exception count_matches(c, 28)
-    @test_throws Exception count_matches(c, 11)
+        @test count_matches(c, 27) == 7
+        @test count_matches(c, 20) == 14
+        @test count_matches(c, 19) == 15
+        @test count_matches(c, 12) == 22
 
-    @test count_matches(c, 27) == 7
-    @test count_matches(c, 20) == 14
-    @test count_matches(c, 19) == 15
-    @test count_matches(c, 12) == 22
-
-    c = CIGAR("100M")
-    @test count_matches(c, 0) == 100
-    @test count_matches(c, 1) == 99
-    @test count_matches(c, 97) == 3
-    @test count_matches(c, 100) == 0
-    @test_throws Exception count_matches(c, 101)
+        c = CIGAR("100M")
+        @test count_matches(c, 0) == 100
+        @test count_matches(c, 1) == 99
+        @test count_matches(c, 97) == 3
+        @test count_matches(c, 100) == 0
+        @test_throws Exception count_matches(c, 101)
+    end
 end
 
 @testset "aln identity" begin
     # Alignment length is 9 + 4 + 3 + 3 + 9 + 12 == 40
     # Maximum mismatches: 9 + 4 + 3 + 12 == 28
     # Minimum mismatches: 4
-    c = CIGAR("11S9M4X3D3M9I12M")
+    s = "11S9M4X3D3M9I12M"
+    for c in [CIGAR(s), BAMCIGAR(CIGAR(s))]
+        @test_throws Exception aln_identity(c, 29)
+        @test_throws Exception aln_identity(c, 3)
 
-    @test_throws Exception aln_identity(c, 29)
-    @test_throws Exception aln_identity(c, 3)
-
-    @test aln_identity(c, 4) == 0.6
-    @test aln_identity(c, 5) == 0.575
-    @test aln_identity(c, 10) == 0.45
-    @test aln_identity(c, 15) == 0.325
-    @test aln_identity(c, 20) == 0.2
-    @test aln_identity(c, 25) == 0.075
-    @test aln_identity(c, 28) == 0.0
+        @test aln_identity(c, 4) == 0.6
+        @test aln_identity(c, 5) == 0.575
+        @test aln_identity(c, 10) == 0.45
+        @test aln_identity(c, 15) == 0.325
+        @test aln_identity(c, 20) == 0.2
+        @test aln_identity(c, 25) == 0.075
+        @test aln_identity(c, 28) == 0.0
+    end
 end
 
 @testset "Translate positions" begin
@@ -142,103 +153,153 @@ end
     # Q HHSS|||......--|.|.-||.....SSS
     #   1234567890123  4567 8901234567
     # A     12345678901234567890123
-    c = CIGAR("2H2S4M4I1X2D1=1I1M1I1D2M4I1X3S")
+    s = "2H2S4M4I1X2D1=1I1M1I1D2M4I1X3S"
+    for c in [CIGAR(s), BAMCIGAR(CIGAR(s))]
 
-    # Getting properties of Translation object
-    t = query_to_aln(c, 12)
-    @test t.pos == 8
-    @test t.kind == CIGARStrings.pos
+        # Getting properties of Translation object
+        t = query_to_aln(c, 12)
+        @test t.pos == 8
+        @test t.kind == CIGARStrings.pos
 
-    t = pos(9)
-    @test t.pos == 9
-    @test t.kind == CIGARStrings.pos
+        t = pos(9)
+        @test t.pos == 9
+        @test t.kind == CIGARStrings.pos
 
-    t = gap(304834283)
-    @test t.pos == 304834283
-    @test t.kind == CIGARStrings.gap
+        t = gap(304834283)
+        @test t.pos == 304834283
+        @test t.kind == CIGARStrings.gap
 
-    # Before alignment
-    @test is_outside(query_to_aln(c, 0))
-    @test is_outside(ref_to_aln(c, 0))
-    @test is_outside(ref_to_query(c, 0))
-    @test is_outside(query_to_ref(c, 0))
-    @test is_outside(aln_to_query(c, 0))
-    @test is_outside(aln_to_ref(c, 0))
-    @test is_outside(query_to_aln(c, 1))
-    @test is_outside(query_to_aln(c, 4))
-    @test is_outside(query_to_ref(c, 1))
-    @test is_outside(query_to_ref(c, 4))
+        # Before alignment
+        @test is_outside(query_to_aln(c, 0))
+        @test is_outside(ref_to_aln(c, 0))
+        @test is_outside(ref_to_query(c, 0))
+        @test is_outside(query_to_ref(c, 0))
+        @test is_outside(aln_to_query(c, 0))
+        @test is_outside(aln_to_ref(c, 0))
+        @test is_outside(query_to_aln(c, 1))
+        @test is_outside(query_to_aln(c, 4))
+        @test is_outside(query_to_ref(c, 1))
+        @test is_outside(query_to_ref(c, 4))
 
-    # After alignment
-    @test is_outside(query_to_ref(c, 25))
-    @test is_outside(query_to_aln(c, 25))
-    @test is_outside(aln_to_query(c, 24))
-    @test is_outside(aln_to_ref(c, 24))
-    @test is_outside(ref_to_query(c, 14))
-    @test is_outside(ref_to_aln(c, 14))
+        # After alignment
+        @test is_outside(query_to_ref(c, 25))
+        @test is_outside(query_to_aln(c, 25))
+        @test is_outside(aln_to_query(c, 24))
+        @test is_outside(aln_to_ref(c, 24))
+        @test is_outside(ref_to_query(c, 14))
+        @test is_outside(ref_to_aln(c, 14))
 
-    # Within alignment
-    @test query_to_ref(c, 5) == pos(1)
-    @test query_to_aln(c, 5) == pos(1)
-    @test ref_to_query(c, 1) == pos(5)
-    @test ref_to_aln(c, 1) == pos(1)
-    @test aln_to_query(c, 1) == pos(5)
-    @test aln_to_ref(c, 1) == pos(1)
+        # Within alignment
+        @test query_to_ref(c, 5) == pos(1)
+        @test query_to_aln(c, 5) == pos(1)
+        @test ref_to_query(c, 1) == pos(5)
+        @test ref_to_aln(c, 1) == pos(1)
+        @test aln_to_query(c, 1) == pos(5)
+        @test aln_to_ref(c, 1) == pos(1)
 
-    # Various
-    @test query_to_ref(c, 7) == pos(3)
-    @test query_to_ref(c, 8) == pos(4)
-    @test query_to_ref(c, 9) == gap(4)
-    @test query_to_ref(c, 12) == gap(4)
-    @test query_to_ref(c, 13) == pos(5)
-    @test query_to_ref(c, 14) == pos(8)
-    @test query_to_ref(c, 15) == gap(8)
-    @test query_to_ref(c, 16) == pos(9)
-    @test query_to_ref(c, 17) == gap(9)
-    @test query_to_ref(c, 18) == pos(11)
-    @test query_to_ref(c, 19) == pos(12)
-    @test query_to_ref(c, 20) == gap(12)
-    @test query_to_ref(c, 23) == gap(12)
-    @test query_to_ref(c, 24) == pos(13)
+        # Various
+        @test query_to_ref(c, 7) == pos(3)
+        @test query_to_ref(c, 8) == pos(4)
+        @test query_to_ref(c, 9) == gap(4)
+        @test query_to_ref(c, 12) == gap(4)
+        @test query_to_ref(c, 13) == pos(5)
+        @test query_to_ref(c, 14) == pos(8)
+        @test query_to_ref(c, 15) == gap(8)
+        @test query_to_ref(c, 16) == pos(9)
+        @test query_to_ref(c, 17) == gap(9)
+        @test query_to_ref(c, 18) == pos(11)
+        @test query_to_ref(c, 19) == pos(12)
+        @test query_to_ref(c, 20) == gap(12)
+        @test query_to_ref(c, 23) == gap(12)
+        @test query_to_ref(c, 24) == pos(13)
 
-    @test query_to_aln(c, 9) == pos(5)
-    @test query_to_aln(c, 13) == pos(9)
-    @test query_to_aln(c, 14) == pos(12)
-    @test query_to_aln(c, 17) == pos(15)
-    @test query_to_aln(c, 18) == pos(17)
-    @test query_to_aln(c, 19) == pos(18)
-    @test query_to_aln(c, 24) == pos(23)
+        @test query_to_aln(c, 9) == pos(5)
+        @test query_to_aln(c, 13) == pos(9)
+        @test query_to_aln(c, 14) == pos(12)
+        @test query_to_aln(c, 17) == pos(15)
+        @test query_to_aln(c, 18) == pos(17)
+        @test query_to_aln(c, 19) == pos(18)
+        @test query_to_aln(c, 24) == pos(23)
 
-    @test aln_to_query(c, 9) == pos(13)
-    @test aln_to_query(c, 10) == gap(13)
-    @test aln_to_query(c, 11) == gap(13)
-    @test aln_to_query(c, 12) == pos(14)
-    @test aln_to_query(c, 13) == pos(15)
-    @test aln_to_query(c, 14) == pos(16)
-    @test aln_to_query(c, 15) == pos(17)
-    @test aln_to_query(c, 16) == gap(17)
-    @test aln_to_query(c, 17) == pos(18)
-    @test aln_to_query(c, 18) == pos(19)
-    @test aln_to_query(c, 19) == pos(20)
-    @test aln_to_query(c, 23) == pos(24)
+        @test aln_to_query(c, 9) == pos(13)
+        @test aln_to_query(c, 10) == gap(13)
+        @test aln_to_query(c, 11) == gap(13)
+        @test aln_to_query(c, 12) == pos(14)
+        @test aln_to_query(c, 13) == pos(15)
+        @test aln_to_query(c, 14) == pos(16)
+        @test aln_to_query(c, 15) == pos(17)
+        @test aln_to_query(c, 16) == gap(17)
+        @test aln_to_query(c, 17) == pos(18)
+        @test aln_to_query(c, 18) == pos(19)
+        @test aln_to_query(c, 19) == pos(20)
+        @test aln_to_query(c, 23) == pos(24)
 
-    @test ref_to_query(c, 5) == pos(13)
-    @test ref_to_query(c, 6) == gap(13)
-    @test ref_to_query(c, 7) == gap(13)
-    @test ref_to_query(c, 8) == pos(14)
-    @test ref_to_query(c, 9) == pos(16)
-    @test ref_to_query(c, 10) == gap(17)
-    @test ref_to_query(c, 11) == pos(18)
-    @test ref_to_query(c, 13) == pos(24)
+        @test ref_to_query(c, 5) == pos(13)
+        @test ref_to_query(c, 6) == gap(13)
+        @test ref_to_query(c, 7) == gap(13)
+        @test ref_to_query(c, 8) == pos(14)
+        @test ref_to_query(c, 9) == pos(16)
+        @test ref_to_query(c, 10) == gap(17)
+        @test ref_to_query(c, 11) == pos(18)
+        @test ref_to_query(c, 13) == pos(24)
 
-    @test ref_to_aln(c, 1) == pos(1)
-    @test ref_to_aln(c, 4) == pos(4)
-    @test ref_to_aln(c, 5) == pos(9)
-    @test ref_to_aln(c, 8) == pos(12)
-    @test ref_to_aln(c, 9) == pos(14)
-    @test ref_to_aln(c, 10) == pos(16)
-    @test ref_to_aln(c, 12) == pos(18)
-    @test ref_to_aln(c, 13) == pos(23)
+        @test ref_to_aln(c, 1) == pos(1)
+        @test ref_to_aln(c, 4) == pos(4)
+        @test ref_to_aln(c, 5) == pos(9)
+        @test ref_to_aln(c, 8) == pos(12)
+        @test ref_to_aln(c, 9) == pos(14)
+        @test ref_to_aln(c, 10) == pos(16)
+        @test ref_to_aln(c, 12) == pos(18)
+        @test ref_to_aln(c, 13) == pos(23)
+    end
 end
+
+@testset "BAMCIGAR specifics" begin
+    @testset "Construction" begin
+        @test BAMCIGAR("\xd0\0\0\0\x92\0\0\0") == CIGAR("13M9D")
+
+        @test CIGARStrings.try_parse(BAMCIGAR, "abc").kind == Errors.NotModFourLength
+
+        for (bad, err) in Any[
+                ("\0\0\0\0", Errors.ZeroLength),
+                ("\x10\0\0\0\x15\0\0\0\x10\0\0\0", Errors.InvalidHardClip),
+                ("\x1a\0\0\0", Errors.InvalidOperation),
+                ("abcdefghi", Errors.NotModFourLength),
+                ("\x10\0\0\0\x14\0\0\0\x10\0\0\0", Errors.InvalidSoftClip),
+            ]
+            @test CIGARStrings.try_parse(BAMCIGAR, bad).kind == err
+        end
+    end
+
+    @testset "Contruction between the two" begin
+        for s in [
+                "",
+                "500S",
+                "10H",
+                "100M",
+                "5H9S1D1D1D2I9S6H",
+            ]
+            c = CIGAR(s)
+            bc = BAMCIGAR(c)
+            c2 = CIGAR(bc)
+            bc2 = BAMCIGAR(c2)
+
+            @test c == bc == c2 == bc2
+        end
+    end
+
+    @testset "cigar_view" begin
+        v = UInt8[]
+        c = CIGAR("15M1D19S9H")
+        m = cigar_view!(v, BAMCIGAR(c))
+        @test m isa ImmutableMemoryView{UInt8}
+        @test m == v
+        @test String(m) == string(CIGAR(c))
+    end
+end
+
+# cigar view
+# bamcigar Constructtion
+# conversion
 
 end # module CIGARTests

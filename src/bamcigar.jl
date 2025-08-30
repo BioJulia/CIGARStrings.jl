@@ -30,7 +30,7 @@ CIGAR("9S123M1=3I15M2H")
 ```
 
 """
-struct BAMCIGAR
+struct BAMCIGAR <: AbstractCIGAR
     mem::ImmutableMemoryView{UInt8}
     n_ops::UInt32
     aln_len::UInt32
@@ -158,13 +158,13 @@ function BAMCIGAR(x::CIGAR, v::Vector{UInt8})
     )
 end
 
-Base.print(io::IO, x::BAMCIGAR) = (write(io, cigar_view(x, UInt8[])); nothing)
+Base.print(io::IO, x::BAMCIGAR) = (write(io, cigar_view!(UInt8[], x)); nothing)
 
 function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
     mem = ImmutableMemoryView(x)::ImmutableMemoryView{UInt8}
 
     # Length must be divisible by 4
-    iszero(length(mem) & 0x02) || return CIGARError(1, Errors.NotModFourLength)
+    iszero(length(mem) & 0x03) || return CIGARError(1, Errors.NotModFourLength)
 
     aln_len = 0
     ref_len = 0
