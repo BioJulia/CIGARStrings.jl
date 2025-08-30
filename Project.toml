@@ -1,6 +1,6 @@
 name = "CIGARStrings"
 uuid = "e5b51f81-6ffd-4e20-bbec-f118e37ea906"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jakob Nybo Nissen <jakobnybonissen@gmail.com>"]
 
 [deps]

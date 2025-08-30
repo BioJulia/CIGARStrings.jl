@@ -305,8 +305,9 @@ end
     end
 end
 
-# cigar view
-# bamcigar Constructtion
-# conversion
+# TODO: More equality tests
+# query length
+# ref length
+# aln length
 
 end # module CIGARTests
