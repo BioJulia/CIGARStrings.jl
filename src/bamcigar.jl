@@ -78,6 +78,41 @@ end
 
 CIGAR(x::BAMCIGAR) = CIGAR(x, UInt8[])
 function CIGAR(x::BAMCIGAR, v::Vector{UInt8})
+    return CIGAR(
+        unsafe,
+        cigar_view!(v, x),
+        x.n_ops,
+        x.aln_len,
+        x.ref_len,
+        x.query_len,
+    )
+end
+
+MemoryViews.MemoryView(x::BAMCIGAR) = x.mem
+
+"""
+    cigar_view!(v::Vector{UInt8}, x::BAMCIGAR)::ImmutableMemoryView{UInt8}
+
+Write the ASCII (i.e. `CIGAR`) representation `x` into `v`,
+emptying `v`'s original content.
+A memory view of `v` is returned:
+
+# Examples
+```jldoctest
+julia> v = [0x01, 0x02, 0x03];
+
+julia> bc = BAMCIGAR(CIGAR("151M3D20M"));
+
+julia> mem_view = cigar_view!(v, bc);
+
+julia> mem_view == v
+true
+
+julia> String(mem_view) == string(CIGAR(bc))
+true
+```
+"""
+function cigar_view!(v::Vector{UInt8}, x::BAMCIGAR)
     empty!(v)
     for element in x
         n = element.len % UInt32
@@ -98,14 +133,7 @@ function CIGAR(x::BAMCIGAR, v::Vector{UInt8})
         byte = ((CIGAR_BYTE_LUT >> shift) % UInt8) & 0x7f
         push!(v, byte)
     end
-    return CIGAR(
-        unsafe,
-        ImmutableMemoryView(v),
-        x.n_ops,
-        x.aln_len,
-        x.ref_len,
-        x.query_len,
-    )
+    return ImmutableMemoryView(v)
 end
 
 BAMCIGAR(x::CIGAR) = BAMCIGAR(x, UInt8[])
@@ -129,6 +157,8 @@ function BAMCIGAR(x::CIGAR, v::Vector{UInt8})
         x.query_len
     )
 end
+
+Base.print(io::IO, x::BAMCIGAR) = (write(io, cigar_view(x, UInt8[])); nothing)
 
 function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
     mem = ImmutableMemoryView(x)::ImmutableMemoryView{UInt8}
@@ -176,6 +206,14 @@ function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
     return BAMCIGAR(unsafe, mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
 end
 
+function Base.:(==)(x::BAMCIGAR, y::BAMCIGAR)
+    return x.n_ops == y.n_ops &&
+        x.aln_len == y.aln_len &&
+        x.ref_len == y.ref_len &&
+        x.query_len == y.query_len &&
+        x.mem == y.mem
+end
+
 Base.:(==)(x::BAMCIGAR, y::CIGAR) = y == x
 function Base.:(==)(x::CIGAR, y::BAMCIGAR)
     if (x.n_ops != y.n_ops) |
@@ -195,7 +233,7 @@ end
 end
 
 function BAMCIGAR(x)
-    y = try_parse(CIGAR, x)
+    y = try_parse(BAMCIGAR, x)
     return y isa CIGARError ? throw(y) : y
 end
 

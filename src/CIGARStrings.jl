@@ -5,7 +5,7 @@ export CIGAR,
     CIGARElement, ref_length, aln_length, query_length, aln_identity,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref, Translation, count_matches,
-    BAMCIGAR, AbstractCIGAR
+    BAMCIGAR, AbstractCIGAR, cigar_view!
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap, TranslationKind
 
@@ -248,8 +248,7 @@ Base.propertynames(::CIGARElement) = (:len, :op)
     abstract type AbstractCIGAR
 
 This abstract type is (not yet) a defined interface.
-Its concrete subtypes are `CIGAR` and `BAMCIGAR`,
-use the concrete subtypes.
+Its concrete subtypes are `CIGAR` and `BAMCIGAR`.
 """
 abstract type AbstractCIGAR end
 

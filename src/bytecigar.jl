@@ -161,6 +161,14 @@ function Base.print(out::IO, cigar::CIGAR)
     return write(out, cigar.mem)
 end
 
+function Base.:(==)(x::CIGAR, y::CIGAR)
+    return x.n_ops == y.n_ops &&
+        x.aln_len == y.aln_len &&
+        x.ref_len == y.ref_len &&
+        x.query_len == y.query_len &&
+        x.mem == y.mem
+end
+
 query_length(x::CIGAR) = x.query_len % Int
 ref_length(x::CIGAR) = x.ref_len % Int
 aln_length(x::CIGAR) = x.aln_len % Int

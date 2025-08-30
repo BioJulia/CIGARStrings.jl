@@ -1,6 +1,7 @@
 [deps]
 CIGARStrings = "e5b51f81-6ffd-4e20-bbec-f118e37ea906"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+MemoryViews = "a791c907-b98b-4e44-8f4d-e4c2362c6b2f"
 
 [sources]
 CIGARStrings = { path = ".." }
