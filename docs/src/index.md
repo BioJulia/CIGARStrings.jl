@@ -2,6 +2,7 @@
 CurrentModule = CIGARStrings
 DocTestSetup = quote
     using CIGARStrings
+    using MemoryViews
     cigar = CIGAR("9H1S15M1D3X3=17M12I8S")
 end
 ```
@@ -38,9 +39,18 @@ CIGAROp
 ```
 
 ## CIGARs
-The CIGAR strings themselves are represented by the `CIGAR` type, which is backed by
-a `MemoryView` (from the MemoryViews.jl package).
-`CIGAR`s can be constructed from most memory-backed, contiguous byte vectors, and are validated upon construction:
+A CIGAR string is represented by an `AbstractCIGAR`, which currently has two subtypes: `CIGAR` and `BAMCIGAR`.
+These types differ in their memory layout: The former stores the CIGAR as its ASCII representation (as used in the SAM format), and the latter stores it in a binary format (as used in the BAM format).
+Both typs store its underlying data as an `ImmutableMemoryView{UInt8}`.
+
+```@docs
+AbstractCIGAR
+```
+
+The API for these two types are almost interchangeable, so examples below will use `CIGAR`, since its plaintext representation makes examples easier.
+See [BAMCIGAR section](@ref bamcigar) for a list of all differences between the two types.
+
+CIGAR strings are validated upon construction
 
 ```jldoctest
 julia> CIGAR("2M1D3M")
@@ -58,7 +68,7 @@ This is zero-copy, and _ought_ not to allocate (although it currently does, due 
 
 For example:
 ```jldoctest
-julia> data = b"some format with CIGAR: 15M9D18M etc"
+julia> data = b"some format with CIGAR: 15M9D18M etc";
 
 julia> buffer = collect(data);
 
@@ -91,6 +101,18 @@ julia> string(c)
 
 julia> io = IOBuffer(); print(io, c); String(take!(io))
 "2M1D3M"
+```
+
+The memory underlying the CIGAR types can be obtained with `MemoryView(x)` using the MemoryViews.jl package:
+
+```jldoctest
+julia> c = CIGAR("19M");
+
+julia> println(MemoryView(c))
+UInt8[0x31, 0x39, 0x4d]
+
+julia> println(MemoryView(BAMCIGAR(c)))
+UInt8[0x30, 0x01, 0x00, 0x00]
 ```
 
 ### Basic information about a CIGAR
@@ -186,4 +208,49 @@ CIGARStrings.jl allows you to parse a poential CIGAR string without throwing an 
 CIGARStrings.CIGARError
 CIGARStrings.CIGARErrorType
 CIGARStrings.try_parse
+```
+
+## [The BAMCIGAR type](@id bamcigar)
+A CIGAR in the BAM format is stored in an array of 32-bit integers.
+However, in order to make zero-copy CIGARs possible, the `BAMCIGAR` type is backed by an `ImmutableMemoryView{UInt8}` instead, with the same memory layout as its equivalent `Memory{UInt32}`.
+
+```@docs
+CIGARStrings.BAMCIGAR
+```
+
+A `BAMCIGAR` can be constructed from its binary representation, using any type which implements `MemoryViews.MemoryView`:
+
+```jldoctest
+julia> BAMCIGAR("\x54\4\0\0\x70\4\0\0")
+BAMCIGAR(CIGAR("69S71M"))
+```
+
+This is not zero-cost: Like `CIGAR` the type contains some metadata and is validated upon construction.
+
+Like `CIGAR`, the `try_parse` function can be used:
+
+```jldoctest
+julia> CIGARStrings.try_parse(BAMCIGAR, "\x5f\4\0\0\x70\4\0\0")
+CIGARStrings.CIGARError(1, CIGARStrings.Errors.InvalidOperation)
+```
+
+`CIGAR` and `BAMCIGAR` can be converted ifallably to each other:
+
+```jldoctest
+julia> c = CIGAR("6H19S18M1I22=8I2S");
+
+julia> b = BAMCIGAR(c);
+
+julia> b == c
+true
+
+julia> CIGAR(b) == c
+true
+```
+
+Note that printing a `BAMCIGAR` allocates, because it needs to allocate a new piece of memory to store its ASCII representation.
+For high performance applications, the function `cigar_view!` may be used:
+
+```@docs
+CIGARStrings.cigar_view!
 ```
