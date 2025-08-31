@@ -162,7 +162,7 @@ function Base.print(out::IO, cigar::CIGAR)
 end
 
 function Base.:(==)(x::CIGAR, y::CIGAR)
-    return x.n_ops == y.n_ops &&
+    return length(x) == length(y) &&
         x.aln_len == y.aln_len &&
         x.ref_len == y.ref_len &&
         x.query_len == y.query_len &&

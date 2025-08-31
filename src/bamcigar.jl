@@ -32,7 +32,6 @@ CIGAR("9S123M1=3I15M2H")
 """
 struct BAMCIGAR <: AbstractCIGAR
     mem::ImmutableMemoryView{UInt8}
-    n_ops::UInt32
     aln_len::UInt32
     ref_len::UInt32
     query_len::UInt32
@@ -40,12 +39,11 @@ struct BAMCIGAR <: AbstractCIGAR
     function BAMCIGAR(
             ::Unsafe,
             mem::ImmutableMemoryView{UInt8},
-            n_ops::UInt32,
             aln_len::UInt32,
             ref_len::UInt32,
             query_len::UInt32,
         )
-        return new(mem, n_ops, aln_len, ref_len, query_len)
+        return new(mem, aln_len, ref_len, query_len)
     end
 end
 
@@ -81,7 +79,7 @@ function CIGAR(x::BAMCIGAR, v::Vector{UInt8})
     return CIGAR(
         unsafe,
         cigar_view!(v, x),
-        x.n_ops,
+        length(x) % UInt32,
         x.aln_len,
         x.ref_len,
         x.query_len,
@@ -151,7 +149,6 @@ function BAMCIGAR(x::CIGAR, v::Vector{UInt8})
     return BAMCIGAR(
         unsafe,
         ImmutableMemoryView(v),
-        x.n_ops,
         x.aln_len,
         x.ref_len,
         x.query_len
@@ -203,11 +200,11 @@ function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
         is_first = false
     end
     max(aln_len, n_ops) > typemax(UInt32) && return CIGARError(lastindex(mem) - 3, Errors.IntegerOverflow)
-    return BAMCIGAR(unsafe, mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
+    return BAMCIGAR(unsafe, mem, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
 end
 
 function Base.:(==)(x::BAMCIGAR, y::BAMCIGAR)
-    return x.n_ops == y.n_ops &&
+    return length(x) == length(y) &&
         x.aln_len == y.aln_len &&
         x.ref_len == y.ref_len &&
         x.query_len == y.query_len &&
@@ -216,7 +213,7 @@ end
 
 Base.:(==)(x::BAMCIGAR, y::CIGAR) = y == x
 function Base.:(==)(x::CIGAR, y::BAMCIGAR)
-    if (x.n_ops != y.n_ops) |
+    if length(x) != length(y) |
             (x.aln_len != y.aln_len) |
             (x.ref_len != y.ref_len) |
             (x.query_len != y.query_len)
