@@ -557,11 +557,10 @@ end
         # If no more cigar elements, emit outside_translation
         maybe_element.x === nothing && return (target => outside_translation, new_state)
         element = something(maybe_element.x)
-        in(element.op, (OP_S, OP_H)) && return (target => outside_translation, new_state)
         next_anchor = advance(anchor, element)
-
         # The first time we overshoot the target, we hit the right operation.
         if mapper.get_src(next_anchor) ≥ target
+            in(element.op, (OP_S, OP_H)) && return (target => outside_translation, new_state)
             # Non-gap elements increment the source position.
             if mapper.get_dst(next_anchor) > mapper.get_dst(anchor)
                 return (target => Translation(unsafe, pos, mapper.get_dst(anchor) + (target - mapper.get_src(anchor))), new_state)
@@ -580,56 +579,6 @@ end
     return
 end
 
-
-# CIGARs don't support random indexing, so we need to do a linear search.
-# In this function and the following, if you search for query_to_ref, then
-# get_src is a function f(x::Anchor) = x.query, and get_dst f(x::Anchor) = x.ref.
-# The comments will, for e.g. query_to_ref, refer to query as src and ref as dst.
-function pos_to_pos(
-        aln::AbstractCIGAR,
-        target::Int,
-        get_src::Function,
-        get_dst::Function,
-    )::Translation
-    return target < 1 ? outside_translation : pos_to_pos_linear(aln, target, get_src, get_dst, zero(Anchor))
-end
-
-@inline function pos_to_pos_linear(
-        CIGARElement_iter,
-        target::Int,
-        get_src::Function,
-        get_dst::Function,
-        prev_anchor::Anchor
-    )::Translation
-    kind = outside
-    for element::CIGARElement in CIGARElement_iter
-        anchor = advance(prev_anchor, element)
-        if get_src(anchor) ≥ target
-            in(element.op, (OP_S, OP_H)) && return outside_translation
-            # We know the src must have been incremented to at or above target by this element.
-            # If the dst was also incremented, we might have overshot.
-            if get_dst(anchor) > get_dst(prev_anchor)
-                kind = pos
-                break
-                # If on the other hand the ref was not incremented, then we have hit
-                # an element that increments our src (query) but not dst (ref),
-                # and so we just report a gap from our previous anchor's dst.
-            else
-                kind = gap
-                break
-            end
-        end
-        prev_anchor = anchor
-    end
-    return if kind == outside
-        outside_translation
-    elseif kind == pos
-        Translation(unsafe, pos, get_dst(prev_anchor) + (target - get_src(prev_anchor)))
-    else
-        Translation(unsafe, gap, Int(get_dst(prev_anchor)))
-    end
-end
-
 """
     query_to_ref(x::AbstractCIGAR, pos::Int)::Int
 
@@ -645,12 +594,8 @@ Translation(pos, 6)
 ```
 """
 function query_to_ref(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.query, i -> i.ref)
-end
-
-function query_to_ref2(x::AbstractCIGAR, pos::Int)
     pm = PositionMapper((pos,), x, i -> i.query, i -> i.ref)
-    return @inline iterate(pm)[1]
+    return @inline iterate(pm)[1][2]
 end
 
 """
@@ -668,7 +613,8 @@ Translation(pos, 10)
 ```
 """
 function query_to_aln(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.query, i -> i.aln)
+    pm = PositionMapper((pos,), x, i -> i.query, i -> i.aln)
+    return @inline iterate(pm)[1][2]
 end
 
 """
@@ -686,8 +632,10 @@ Translation(pos, 9)
 ```
 """
 function ref_to_query(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.query)
+    pm = PositionMapper((pos,), x, i -> i.ref, i -> i.query)
+    return @inline iterate(pm)[1][2]
 end
+
 
 """
     ref_to_aln(x::AbstractCIGAR, pos::Int)::Int
@@ -704,7 +652,8 @@ Translation(pos, 11)
 ```
 """
 function ref_to_aln(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.aln)
+    pm = PositionMapper((pos,), x, i -> i.ref, i -> i.aln)
+    return @inline iterate(pm)[1][2]
 end
 
 """
@@ -722,7 +671,8 @@ Translation(pos, 8)
 ```
 """
 function aln_to_query(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.query)
+    pm = PositionMapper((pos,), x, i -> i.aln, i -> i.query)
+    return @inline iterate(pm)[1][2]
 end
 
 """
@@ -740,7 +690,8 @@ Translation(gap, 6)
 ```
 """
 function aln_to_ref(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.ref)
+    pm = PositionMapper((pos,), x, i -> i.aln, i -> i.ref)
+    return @inline iterate(pm)[1][2]
 end
 
 end # module CIGARStrings
