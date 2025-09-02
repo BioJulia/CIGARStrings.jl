@@ -488,16 +488,11 @@ struct PositionMapper{I, C, S, D}
     get_dst::D
 end
 
-# Work around problem where Tuple{T} is abstract if T is a union
-# by wrapping the union in a struct.
-struct MaybeElement
-    x::Union{CIGARElement, Nothing}
-end
-
+const SENTINEL_ELEMENT = CIGARElement(unsafe, typemax(UInt32))
 
 Base.IteratorSize(::Type{<:PositionMapper{I}}) where {I} = Base.IteratorSize(I)
 Base.length(x::PositionMapper) = length(x.integers)
-Base.eltype(::Type{<:PositionMapper}) = Pair{Int, Translation} # TODO: Only emit translation?
+Base.eltype(::Type{<:PositionMapper}) = Translation # TODO: Only emit translation?
 Base.size(x::PositionMapper) = size(x.integers)
 
 function Base.iterate(mapper::PositionMapper)
@@ -508,7 +503,7 @@ function Base.iterate(mapper::PositionMapper)
     end
     (maybe_element, cigar_state) = let
         it = iterate(mapper.cigar)
-        isnothing(it) ? (MaybeElement(nothing), 1) : (MaybeElement(first(it))), last(it)
+        isnothing(it) ? (SENTINEL_ELEMENT, 1) : it
     end
     return _iterate(
         mapper,
@@ -523,7 +518,7 @@ end
 
 
 function Base.iterate(mapper::PositionMapper, state)
-    (integer_state, last_integer, anchor, maybe_element, cigar_state) = state
+    (integer_state, last_integer, anchor, element, cigar_state) = state
     # If no more integers, done
     (target, next_integer_state) = let
         it = iterate(mapper.integers, integer_state)
@@ -536,7 +531,7 @@ function Base.iterate(mapper::PositionMapper, state)
         last_integer,
         next_integer_state,
         anchor,
-        maybe_element,
+        element,
         cigar_state
     )
 end
@@ -547,33 +542,32 @@ end
         last_integer::Int,
         next_integer_state,
         anchor,
-        maybe_element::MaybeElement,
+        element::CIGARElement,
         cigar_state
     )
     # Integers must be ascending
-    target ≥ last_integer || error("Integers must be ascending in order")
-    new_state = (next_integer_state, target, anchor, maybe_element, cigar_state)
+    target ≥ last_integer || throw(ArgumentError("Integers must be ascending in order"))
+    new_state = (next_integer_state, target, anchor, element, cigar_state)
+    target > 0 || return (outside_translation, new_state)
     while true
-        # If no more cigar elements, emit outside_translation
-        maybe_element.x === nothing && return (target => outside_translation, new_state)
-        element = something(maybe_element.x)
+        element === SENTINEL_ELEMENT && return (outside_translation, new_state)
         next_anchor = advance(anchor, element)
         # The first time we overshoot the target, we hit the right operation.
         if mapper.get_src(next_anchor) ≥ target
-            in(element.op, (OP_S, OP_H)) && return (target => outside_translation, new_state)
+            in(element.op, (OP_S, OP_H)) && return (outside_translation, new_state)
             # Non-gap elements increment the source position.
             if mapper.get_dst(next_anchor) > mapper.get_dst(anchor)
-                return (target => Translation(unsafe, pos, mapper.get_dst(anchor) + (target - mapper.get_src(anchor))), new_state)
+                return (Translation(unsafe, pos, mapper.get_dst(anchor) + (target - mapper.get_src(anchor))), new_state)
             else
-                return (target => Translation(unsafe, gap, Int(mapper.get_dst(anchor))), new_state)
+                return (Translation(unsafe, gap, Int(mapper.get_dst(anchor))), new_state)
             end
         else
-            (maybe_element, cigar_state) = let
+            (element, cigar_state) = let
                 it = iterate(mapper.cigar, cigar_state)
-                it === nothing ? (MaybeElement(nothing), cigar_state) : (MaybeElement(first(it)), last(it))
+                it === nothing ? (SENTINEL_ELEMENT, cigar_state) : it
             end
             anchor = next_anchor
-            new_state = (next_integer_state, target, anchor, maybe_element, cigar_state)
+            new_state = (next_integer_state, target, anchor, element, cigar_state)
         end
     end
     return
@@ -595,7 +589,7 @@ Translation(pos, 6)
 """
 function query_to_ref(x::AbstractCIGAR, pos::Int)
     pm = PositionMapper((pos,), x, i -> i.query, i -> i.ref)
-    return @inline iterate(pm)[1][2]
+    return @inline iterate(pm)[1]
 end
 
 """
@@ -614,7 +608,7 @@ Translation(pos, 10)
 """
 function query_to_aln(x::AbstractCIGAR, pos::Int)
     pm = PositionMapper((pos,), x, i -> i.query, i -> i.aln)
-    return @inline iterate(pm)[1][2]
+    return @inline iterate(pm)[1]
 end
 
 """
@@ -633,7 +627,7 @@ Translation(pos, 9)
 """
 function ref_to_query(x::AbstractCIGAR, pos::Int)
     pm = PositionMapper((pos,), x, i -> i.ref, i -> i.query)
-    return @inline iterate(pm)[1][2]
+    return @inline iterate(pm)[1]
 end
 
 
@@ -653,7 +647,7 @@ Translation(pos, 11)
 """
 function ref_to_aln(x::AbstractCIGAR, pos::Int)
     pm = PositionMapper((pos,), x, i -> i.ref, i -> i.aln)
-    return @inline iterate(pm)[1][2]
+    return @inline iterate(pm)[1]
 end
 
 """
@@ -672,7 +666,7 @@ Translation(pos, 8)
 """
 function aln_to_query(x::AbstractCIGAR, pos::Int)
     pm = PositionMapper((pos,), x, i -> i.aln, i -> i.query)
-    return @inline iterate(pm)[1][2]
+    return @inline iterate(pm)[1]
 end
 
 """
@@ -691,7 +685,7 @@ Translation(gap, 6)
 """
 function aln_to_ref(x::AbstractCIGAR, pos::Int)
     pm = PositionMapper((pos,), x, i -> i.aln, i -> i.ref)
-    return @inline iterate(pm)[1][2]
+    return @inline iterate(pm)[1]
 end
 
 end # module CIGARStrings
