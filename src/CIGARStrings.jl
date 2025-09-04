@@ -5,9 +5,10 @@ export CIGAR,
     CIGARElement, ref_length, aln_length, query_length, aln_identity,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref, Translation, count_matches,
-    BAMCIGAR, AbstractCIGAR, cigar_view!
+    BAMCIGAR, AbstractCIGAR, cigar_view!, ref, query, aln, pos_to_pos
 
-public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap, TranslationKind
+public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
+    TranslationKind, PositionMapper
 
 using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView
 
@@ -466,7 +467,7 @@ end
     aln_identity(::AbstractCIGAR, mismatches::Int)::Float64
 
 Compute the alignment identity of the `CIGAR`, computed as the number of matches
-(not mismtches) divided by alignment length.
+(not mismatches) divided by alignment length.
 Since the CIGAR itself may not provide information about the precise number of
 mismatches, the amount of mismatches is an argument.
 The result is always in [0.0, 1.0].
@@ -481,57 +482,192 @@ function aln_identity(x::AbstractCIGAR, mismatches::Int)::Float64
     return count_matches(x, mismatches) / aln_length(x)
 end
 
-# CIGARs don't support random indexing, so we need to do a linear search.
-# In this function and the following, if you search for query_to_ref, then
-# get_src is a function f(x::Anchor) = x.query, and get_dst f(x::Anchor) = x.ref.
-# The comments will, for e.g. query_to_ref, refer to query as src and ref as dst.
-function pos_to_pos(
-        aln::AbstractCIGAR,
-        target::Int,
-        get_src::Function,
-        get_dst::Function,
-    )::Translation
-    return target < 1 ? outside_translation : pos_to_pos_linear(aln, target, get_src, get_dst, zero(Anchor))
+"""
+    PositionMapper{Params...}
+
+Public struct returned by `pos_to_pos(..., pos)` when `!isa(pos, Integer)`.
+This type may be referred to in stable code, but its API is defined by
+`pos_to_pos`
+
+See also: [`pos_to_pos`](@ref)
+"""
+struct PositionMapper{I, C, S, D}
+    integers::I
+    cigar::C
+    get_src::S
+    get_dst::D
 end
 
-@inline function pos_to_pos_linear(
-        CIGARElement_iter,
+const SENTINEL_ELEMENT = CIGARElement(unsafe, typemax(UInt32))
+
+Base.IteratorSize(::Type{<:PositionMapper{I}}) where {I} = Base.IteratorSize(I)
+Base.length(x::PositionMapper) = length(x.integers)
+Base.eltype(::Type{<:PositionMapper}) = Translation # TODO: Only emit translation?
+Base.size(x::PositionMapper) = size(x.integers)
+
+function Base.iterate(mapper::PositionMapper)
+    (target, next_integer_state) = let
+        it = iterate(mapper.integers)
+        it === nothing && return nothing
+        it
+    end
+    (maybe_element, cigar_state) = let
+        it = iterate(mapper.cigar)
+        isnothing(it) ? (SENTINEL_ELEMENT, 1) : it
+    end
+    return _iterate(
+        mapper,
+        Int(target)::Int,
+        typemin(Int),
+        next_integer_state,
+        zero(Anchor),
+        maybe_element,
+        cigar_state
+    )
+end
+
+
+function Base.iterate(mapper::PositionMapper, state)
+    (integer_state, last_integer, anchor, element, cigar_state) = state
+    # If no more integers, done
+    (target, next_integer_state) = let
+        it = iterate(mapper.integers, integer_state)
+        it === nothing && return nothing
+        it
+    end
+    return _iterate(
+        mapper,
+        Int(target)::Int,
+        last_integer,
+        next_integer_state,
+        anchor,
+        element,
+        cigar_state
+    )
+end
+
+@inline function _iterate(
+        mapper::PositionMapper,
         target::Int,
-        get_src::Function,
-        get_dst::Function,
-        prev_anchor::Anchor
-    )::Translation
-    kind = outside
-    for element::CIGARElement in CIGARElement_iter
-        anchor = advance(prev_anchor, element)
-        if get_src(anchor) ≥ target
-            in(element.op, (OP_S, OP_H)) && return outside_translation
-            # We know the src must have been incremented to at or above target by this element.
-            # If the dst was also incremented, we might have overshot.
-            if get_dst(anchor) > get_dst(prev_anchor)
-                kind = pos
-                break
-                # If on the other hand the ref was not incremented, then we have hit
-                # an element that increments our src (query) but not dst (ref),
-                # and so we just report a gap from our previous anchor's dst.
+        last_integer::Int,
+        next_integer_state,
+        anchor,
+        element::CIGARElement,
+        cigar_state
+    )
+    target ≥ last_integer || throw(ArgumentError("Integers must be ascending in order"))
+    new_state = (next_integer_state, target, anchor, element, cigar_state)
+    target > 0 || return (outside_translation, new_state)
+    # When mapping to own coordinate system we just care if it's inbounds.
+    if mapper.get_dst === mapper.get_src
+        target > n_symbols(mapper.get_dst, mapper.cigar) && return (outside_translation, new_state)
+        return (Translation(unsafe, pos, target), new_state)
+    end
+    while true
+        element === SENTINEL_ELEMENT && return (outside_translation, new_state)
+        next_anchor = advance(anchor, element)
+        # The first time we overshoot the target, we hit the right operation.
+        if mapper.get_src(next_anchor) ≥ target
+            in(element.op, (OP_S, OP_H)) && return (outside_translation, new_state)
+            # Non-gap elements increment the source position.
+            if mapper.get_dst(next_anchor) > mapper.get_dst(anchor)
+                return (Translation(unsafe, pos, mapper.get_dst(anchor) + (target - mapper.get_src(anchor))), new_state)
             else
-                kind = gap
-                break
+                return (Translation(unsafe, gap, Int(mapper.get_dst(anchor))), new_state)
             end
+        else
+            (element, cigar_state) = let
+                it = iterate(mapper.cigar, cigar_state)
+                it === nothing ? (SENTINEL_ELEMENT, cigar_state) : it
+            end
+            anchor = next_anchor
+            new_state = (next_integer_state, target, anchor, element, cigar_state)
         end
-        prev_anchor = anchor
     end
-    return if kind == outside
-        outside_translation
-    elseif kind == pos
-        Translation(unsafe, pos, get_dst(prev_anchor) + (target - get_src(prev_anchor)))
-    else
-        Translation(unsafe, gap, Int(get_dst(prev_anchor)))
-    end
+    return
+end
+
+abstract type Coordinate <: Function end
+
+struct Query <: Coordinate end
+struct Aln <: Coordinate end
+struct Ref <: Coordinate end
+
+"Coordinate system representing the 1-based index in the query sequence"
+const query = Query()
+
+"Coordinate system representing the 1-based index in the alignment (i.e. query/ref including gaps)"
+const aln = Aln()
+
+"Coordinate system representing the 1-based index in the reference sequence"
+const ref = Ref()
+
+(::Query)(x::Anchor) = x.query
+(::Ref)(x::Anchor) = x.ref
+(::Aln)(x::Anchor) = x.aln
+
+n_symbols(::Query, x::AbstractCIGAR) = query_length(x)
+n_symbols(::Ref, x::AbstractCIGAR) = ref_length(x)
+n_symbols(::Aln, x::AbstractCIGAR) = aln_length(x)
+
+"""
+    pos_to_pos(from::Coordinate, to::Coodinate, cigar::AbstractCIGAR, pos::Integer)::Integer
+
+Similar to the generic `pos_to_pos`, but returns the resulting integer immediately instead of returning
+a lazy iterator.
+"""
+function pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, pos::Integer)
+    pos = Int(pos)::Int
+    mapper = PositionMapper(pos, cigar, from, to)
+    return @inline iterate(mapper)[1]
 end
 
 """
-    query_to_ref(x::AbstractCIGAR, pos::Int)::Int
+    pos_to_pos(
+        from::Coordinate,
+        to::Coodinate,
+        cigar::AbstractCIGAR,
+        pos
+    )::PositionMapper
+
+Map positions from one coordinate system in the alignment given by `cigar` to another.
+
+Given `pos`, an iterable of sorted (ascending) integers in the coordiate system of `from`,
+returns a `PositionMapper` - an iterable of `Int` of the correspoding coordinate system in `to`,
+given as a `Translation`.
+
+The coordinates may be `query`, `ref` or `aln`:
+* `query` represents the 1-based index into the query sequence
+* `ref` represents the 1-based index into the reference sequence
+* `aln` is the index of the alignment itself, i.e. equivalent to the sequence of
+  either the query or the ref when gaps according to indel operations of `c`.
+
+For example, given the query positions `p = [4, 9, 11]` and `c::AbstractCIGAR`, the corresponding positions in the reference
+can be obtained by `collect(pos_to_pos(query, ref, c, p))`
+
+See also: [`Translation`](@ref), [`ref_to_query`](@ref), [`aln_to_ref`](@ref) etc.
+
+```jldoctest
+julia> iter = pos_to_pos(query, ref, CIGAR("5M2D10M"), [0, 4, 9, 16]);
+
+julia> iter isa CIGARStrings.PositionMapper
+true
+
+julia> collect(iter)
+4-element Vector{Translation}:
+ Translation(outside, 0)
+ Translation(pos, 4)
+ Translation(pos, 11)
+ Translation(outside, 0)
+```
+"""
+function pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, positions)
+    return PositionMapper(positions, cigar, from, to)
+end
+
+
+"""
+    query_to_ref(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based reference position aligning to query position `pos`.
 See [`Translation`](@ref) for more details.
@@ -544,12 +680,10 @@ julia> query_to_ref(c, 4)
 Translation(pos, 6)
 ```
 """
-function query_to_ref(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.query, i -> i.ref)
-end
+query_to_ref(x::AbstractCIGAR, pos::Integer) = pos_to_pos(query, ref, x, pos)
 
 """
-    query_to_aln(x::AbstractCIGAR, pos::Int)::Int
+    query_to_aln(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based alignment position aligning to query position `pos`.
 See [`Translation`](@ref) for more details.
@@ -562,12 +696,10 @@ julia> query_to_aln(c, 8)
 Translation(pos, 10)
 ```
 """
-function query_to_aln(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.query, i -> i.aln)
-end
+query_to_aln(x::AbstractCIGAR, pos::Integer) = pos_to_pos(query, aln, x, pos)
 
 """
-    ref_to_query(x::AbstractCIGAR, pos::Int)::Int
+    ref_to_query(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based query position aligning to reference position `pos`.
 See [`Translation`](@ref) for more details.
@@ -580,12 +712,11 @@ julia> ref_to_query(c, 7)
 Translation(pos, 9)
 ```
 """
-function ref_to_query(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.query)
-end
+ref_to_query(x::AbstractCIGAR, pos::Integer) = pos_to_pos(ref, query, x, pos)
+
 
 """
-    ref_to_aln(x::AbstractCIGAR, pos::Int)::Int
+    ref_to_aln(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based alignment position aligning to reference position `pos`.
 See [`Translation`](@ref) for more details.
@@ -598,12 +729,10 @@ julia> ref_to_aln(c, 7)
 Translation(pos, 11)
 ```
 """
-function ref_to_aln(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.ref, i -> i.aln)
-end
+ref_to_aln(x::AbstractCIGAR, pos::Integer) = pos_to_pos(ref, aln, x, pos)
 
 """
-    aln_to_query(x::AbstractCIGAR, pos::Int)::Int
+    aln_to_query(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based query position aligning to alignment position `pos`.
 See [`Translation`](@ref) for more details.
@@ -616,12 +745,10 @@ julia> aln_to_query(c, 10)
 Translation(pos, 8)
 ```
 """
-function aln_to_query(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.query)
-end
+aln_to_query(x::AbstractCIGAR, pos::Integer) = pos_to_pos(aln, query, x, pos)
 
 """
-    aln_to_ref(x::AbstractCIGAR, pos::Int)::Int
+    aln_to_ref(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based reference position aligning to alignment position `pos`.
 See [`Translation`](@ref) for more details.
@@ -634,8 +761,6 @@ julia> aln_to_ref(c, 9)
 Translation(gap, 6)
 ```
 """
-function aln_to_ref(x::AbstractCIGAR, pos::Int)
-    return @inline pos_to_pos(x, pos, i -> i.aln, i -> i.ref)
-end
+aln_to_ref(x::AbstractCIGAR, pos::Integer) = pos_to_pos(aln, ref, x, pos)
 
 end # module CIGARStrings

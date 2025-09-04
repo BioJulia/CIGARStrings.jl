@@ -176,9 +176,10 @@ are also written in this alignment.
 We can see that query position 6 aligns to reference position 9, which is also
 alignment position 9.
 
-These position translations can be obtained using the functions [`query_to_ref`](@ref),
-[`query_to_aln`](@ref), [`ref_to_query`](@ref), [`ref_to_aln`](@ref), [`aln_to_query`](@ref) and [`aln_to_ref`](@ref).
-They return a `Translation` object that contains two properties: `.pos` and `.kind`.
+These position translation can be obtained using the function [`pos_to_pos`](@ref),
+specifying the source and destination coordinate systems [`query`](@ref), [`ref`](@ref)
+or [`aln`](@ref).
+When passed an integer, this function returns `Translation` object that contains two properties: `.pos` and `.kind`.
 
 When a position translation has a straightforward answer, the `.kind` property is
 `CIGARStrings.pos`, and the `.pos` field is the corresponding position:
@@ -186,17 +187,35 @@ When a position translation has a straightforward answer, the `.kind` property i
 ```jldoctest
 julia> c = CIGAR("4M3D2M2I3M"); # alignment above
 
-julia> query_to_ref(c, 6)
+julia> pos_to_pos(query, ref, c, 6)
 Translation(pos, 9)
 
-julia> aln_to_query(c, 9)
+julia> pos_to_pos(aln, query, c, 9)
 Translation(pos, 6)
 ```
 
 Note that these operations are in __linear time__, as they scan the CIGAR string from the beginning.
-If the CIGAR string is long, and many of these operations are done on the same string, it may be better to construct another data structure for the alignment, which allows logarithmic-time queries, e.g. the ones in BioAlignments.jl.
+
+To efficiently query multiple translations in the same scan of the CIGAR string, you can pass a sorted (ascending) iterator of integers:
+
+```jldoctest
+julia> c = CIGAR("4M3D2M2I3M"); # alignment above
+
+julia> it = pos_to_pos(query, ref, c, [1, 5, 6, 11]);
+
+julia> length(it)
+4
+
+julia> collect(it)
+4-element Vector{Translation}:
+ Translation(pos, 1)
+ Translation(pos, 8)
+ Translation(pos, 9)
+ Translation(pos, 12)
+```
 
 ```@docs
+pos_to_pos
 Translation
 CIGARStrings.TranslationKind
 ```
