@@ -29,6 +29,10 @@ OP_N
 OP_P
 OP_X
 OP_Eq
+CIGARStrings.PositionMapper
+query
+ref
+aln
 ref_length
 query_length
 aln_length

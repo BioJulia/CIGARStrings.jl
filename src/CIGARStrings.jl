@@ -5,9 +5,10 @@ export CIGAR,
     CIGARElement, ref_length, aln_length, query_length, aln_identity,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref, Translation, count_matches,
-    BAMCIGAR, AbstractCIGAR, cigar_view!
+    BAMCIGAR, AbstractCIGAR, cigar_view!, ref, query, aln, pos_to_pos
 
-public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap, TranslationKind
+public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
+    TranslationKind, PositionMapper
 
 using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView
 
@@ -466,7 +467,7 @@ end
     aln_identity(::AbstractCIGAR, mismatches::Int)::Float64
 
 Compute the alignment identity of the `CIGAR`, computed as the number of matches
-(not mismtches) divided by alignment length.
+(not mismatches) divided by alignment length.
 Since the CIGAR itself may not provide information about the precise number of
 mismatches, the amount of mismatches is an argument.
 The result is always in [0.0, 1.0].
@@ -481,6 +482,15 @@ function aln_identity(x::AbstractCIGAR, mismatches::Int)::Float64
     return count_matches(x, mismatches) / aln_length(x)
 end
 
+"""
+    PositionMapper{Params...}
+
+Public struct returned by `pos_to_pos(..., pos)` when `!isa(pos, Integer)`.
+This type may be referred to in stable code, but its API is defined by
+`pos_to_pos`
+
+See also: [`pos_to_pos`](@ref)
+"""
 struct PositionMapper{I, C, S, D}
     integers::I
     cigar::C
@@ -545,10 +555,14 @@ end
         element::CIGARElement,
         cigar_state
     )
-    # Integers must be ascending
     target ≥ last_integer || throw(ArgumentError("Integers must be ascending in order"))
     new_state = (next_integer_state, target, anchor, element, cigar_state)
     target > 0 || return (outside_translation, new_state)
+    # When mapping to own coordinate system we just care if it's inbounds.
+    if mapper.get_dst === mapper.get_src
+        target > n_symbols(mapper.get_dst, mapper.cigar) && return (outside_translation, new_state)
+        return (Translation(unsafe, pos, target), new_state)
+    end
     while true
         element === SENTINEL_ELEMENT && return (outside_translation, new_state)
         next_anchor = advance(anchor, element)
@@ -573,8 +587,87 @@ end
     return
 end
 
+abstract type Coordinate <: Function end
+
+struct Query <: Coordinate end
+struct Aln <: Coordinate end
+struct Ref <: Coordinate end
+
+"Coordinate system representing the 1-based index in the query sequence"
+const query = Query()
+
+"Coordinate system representing the 1-based index in the alignment (i.e. query/ref including gaps)"
+const aln = Aln()
+
+"Coordinate system representing the 1-based index in the reference sequence"
+const ref = Ref()
+
+(::Query)(x::Anchor) = x.query
+(::Ref)(x::Anchor) = x.ref
+(::Aln)(x::Anchor) = x.aln
+
+n_symbols(::Query, x::AbstractCIGAR) = query_length(x)
+n_symbols(::Ref, x::AbstractCIGAR) = ref_length(x)
+n_symbols(::Aln, x::AbstractCIGAR) = aln_length(x)
+
 """
-    query_to_ref(x::AbstractCIGAR, pos::Int)::Int
+    pos_to_pos(from::Coordinate, to::Coodinate, cigar::AbstractCIGAR, pos::Integer)::Integer
+
+Similar to the generic `pos_to_pos`, but returns the resulting integer immediately instead of returning
+a lazy iterator.
+"""
+function pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, pos::Integer)
+    pos = Int(pos)::Int
+    mapper = PositionMapper(pos, cigar, from, to)
+    return @inline iterate(mapper)[1]
+end
+
+"""
+    pos_to_pos(
+        from::Coordinate,
+        to::Coodinate,
+        cigar::AbstractCIGAR,
+        pos
+    )::PositionMapper
+
+Map positions from one coordinate system in the alignment given by `cigar` to another.
+
+Given `pos`, an iterable of sorted (ascending) integers in the coordiate system of `from`,
+returns a `PositionMapper` - an iterable of `Int` of the correspoding coordinate system in `to`,
+given as a `Translation`.
+
+The coordinates may be `query`, `ref` or `aln`:
+* `query` represents the 1-based index into the query sequence
+* `ref` represents the 1-based index into the reference sequence
+* `aln` is the index of the alignment itself, i.e. equivalent to the sequence of
+  either the query or the ref when gaps according to indel operations of `c`.
+
+For example, given the query positions `p = [4, 9, 11]` and `c::AbstractCIGAR`, the corresponding positions in the reference
+can be obtained by `collect(pos_to_pos(query, ref, c, p))`
+
+See also: [`Translation`](@ref), [`ref_to_query`](@ref), [`aln_to_ref`](@ref) etc.
+
+```jldoctest
+julia> iter = pos_to_pos(query, ref, CIGAR("5M2D10M"), [0, 4, 9, 16]);
+
+julia> iter isa CIGARStrings.PositionMapper
+true
+
+julia> collect(iter)
+4-element Vector{Translation}:
+ Translation(outside, 0)
+ Translation(pos, 4)
+ Translation(pos, 11)
+ Translation(outside, 0)
+```
+"""
+function pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, positions)
+    return PositionMapper(positions, cigar, from, to)
+end
+
+
+"""
+    query_to_ref(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based reference position aligning to query position `pos`.
 See [`Translation`](@ref) for more details.
@@ -587,13 +680,10 @@ julia> query_to_ref(c, 4)
 Translation(pos, 6)
 ```
 """
-function query_to_ref(x::AbstractCIGAR, pos::Int)
-    pm = PositionMapper((pos,), x, i -> i.query, i -> i.ref)
-    return @inline iterate(pm)[1]
-end
+query_to_ref(x::AbstractCIGAR, pos::Integer) = pos_to_pos(query, ref, x, pos)
 
 """
-    query_to_aln(x::AbstractCIGAR, pos::Int)::Int
+    query_to_aln(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based alignment position aligning to query position `pos`.
 See [`Translation`](@ref) for more details.
@@ -606,13 +696,10 @@ julia> query_to_aln(c, 8)
 Translation(pos, 10)
 ```
 """
-function query_to_aln(x::AbstractCIGAR, pos::Int)
-    pm = PositionMapper((pos,), x, i -> i.query, i -> i.aln)
-    return @inline iterate(pm)[1]
-end
+query_to_aln(x::AbstractCIGAR, pos::Integer) = pos_to_pos(query, aln, x, pos)
 
 """
-    ref_to_query(x::AbstractCIGAR, pos::Int)::Int
+    ref_to_query(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based query position aligning to reference position `pos`.
 See [`Translation`](@ref) for more details.
@@ -625,14 +712,11 @@ julia> ref_to_query(c, 7)
 Translation(pos, 9)
 ```
 """
-function ref_to_query(x::AbstractCIGAR, pos::Int)
-    pm = PositionMapper((pos,), x, i -> i.ref, i -> i.query)
-    return @inline iterate(pm)[1]
-end
+ref_to_query(x::AbstractCIGAR, pos::Integer) = pos_to_pos(ref, query, x, pos)
 
 
 """
-    ref_to_aln(x::AbstractCIGAR, pos::Int)::Int
+    ref_to_aln(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based alignment position aligning to reference position `pos`.
 See [`Translation`](@ref) for more details.
@@ -645,13 +729,10 @@ julia> ref_to_aln(c, 7)
 Translation(pos, 11)
 ```
 """
-function ref_to_aln(x::AbstractCIGAR, pos::Int)
-    pm = PositionMapper((pos,), x, i -> i.ref, i -> i.aln)
-    return @inline iterate(pm)[1]
-end
+ref_to_aln(x::AbstractCIGAR, pos::Integer) = pos_to_pos(ref, aln, x, pos)
 
 """
-    aln_to_query(x::AbstractCIGAR, pos::Int)::Int
+    aln_to_query(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based query position aligning to alignment position `pos`.
 See [`Translation`](@ref) for more details.
@@ -664,13 +745,10 @@ julia> aln_to_query(c, 10)
 Translation(pos, 8)
 ```
 """
-function aln_to_query(x::AbstractCIGAR, pos::Int)
-    pm = PositionMapper((pos,), x, i -> i.aln, i -> i.query)
-    return @inline iterate(pm)[1]
-end
+aln_to_query(x::AbstractCIGAR, pos::Integer) = pos_to_pos(aln, query, x, pos)
 
 """
-    aln_to_ref(x::AbstractCIGAR, pos::Int)::Int
+    aln_to_ref(x::AbstractCIGAR, pos::Integer)::Int
 
 Get the 1-based reference position aligning to alignment position `pos`.
 See [`Translation`](@ref) for more details.
@@ -683,9 +761,6 @@ julia> aln_to_ref(c, 9)
 Translation(gap, 6)
 ```
 """
-function aln_to_ref(x::AbstractCIGAR, pos::Int)
-    pm = PositionMapper((pos,), x, i -> i.aln, i -> i.ref)
-    return @inline iterate(pm)[1]
-end
+aln_to_ref(x::AbstractCIGAR, pos::Integer) = pos_to_pos(aln, ref, x, pos)
 
 end # module CIGARStrings

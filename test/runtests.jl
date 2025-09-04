@@ -252,6 +252,35 @@ end
         @test ref_to_aln(c, 12) == pos(18)
         @test ref_to_aln(c, 13) == pos(23)
     end
+
+    @testset "Iterator" begin
+        s = "2H2S4M4I1X2D1=1I1M1I1D2M4I1X3S"
+        T = CIGARStrings.PositionMapper
+        for c in [CIGAR(s), BAMCIGAR(CIGAR(s))]
+            it = pos_to_pos(query, aln, c, (i for i in 1:3:25))
+            @test it isa T
+            @test length(it) == length(1:3:25)
+            @test collect(it) == [query_to_aln(c, i) for i in 1:3:25]
+
+            v = [-10, 0, 1, 3, 8, 8, 13, 15, 21]
+            for coordinate in [query, ref, aln]
+                it = pos_to_pos(coordinate, coordinate, c, v)
+                @test length(it) == length(v)
+                @test [i.pos for i in collect(it)] == map(v) do i
+                    L = if coordinate === query
+                        query_length(c)
+                    elseif coordinate === ref
+                        ref_length(c)
+                    else
+                        aln_length(c)
+                    end
+                    in(i, 1:L) ? i : 0
+                end
+            end
+
+            @test_throws ArgumentError collect(pos_to_pos(query, ref, c, [5, 9, 8]))
+        end
+    end
 end
 
 @testset "BAMCIGAR specifics" begin
