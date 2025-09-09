@@ -502,7 +502,7 @@ const SENTINEL_ELEMENT = CIGARElement(unsafe, typemax(UInt32))
 
 Base.IteratorSize(::Type{<:PositionMapper{I}}) where {I} = Base.IteratorSize(I)
 Base.length(x::PositionMapper) = length(x.integers)
-Base.eltype(::Type{<:PositionMapper}) = Translation # TODO: Only emit translation?
+Base.eltype(::Type{<:PositionMapper}) = Pair{Int, Translation}
 Base.size(x::PositionMapper) = size(x.integers)
 
 function Base.iterate(mapper::PositionMapper)
@@ -557,23 +557,23 @@ end
     )
     target ≥ last_integer || throw(ArgumentError("Integers must be ascending in order"))
     new_state = (next_integer_state, target, anchor, element, cigar_state)
-    target > 0 || return (outside_translation, new_state)
+    target > 0 || return (target => outside_translation, new_state)
     # When mapping to own coordinate system we just care if it's inbounds.
     if mapper.get_dst === mapper.get_src
-        target > n_symbols(mapper.get_dst, mapper.cigar) && return (outside_translation, new_state)
-        return (Translation(unsafe, pos, target), new_state)
+        target > n_symbols(mapper.get_dst, mapper.cigar) && return (target => outside_translation, new_state)
+        return (target => Translation(unsafe, pos, target), new_state)
     end
     while true
-        element === SENTINEL_ELEMENT && return (outside_translation, new_state)
+        element === SENTINEL_ELEMENT && return (target => outside_translation, new_state)
         next_anchor = advance(anchor, element)
         # The first time we overshoot the target, we hit the right operation.
         if mapper.get_src(next_anchor) ≥ target
-            in(element.op, (OP_S, OP_H)) && return (outside_translation, new_state)
+            in(element.op, (OP_S, OP_H)) && return (target => outside_translation, new_state)
             # Non-gap elements increment the source position.
             if mapper.get_dst(next_anchor) > mapper.get_dst(anchor)
-                return (Translation(unsafe, pos, mapper.get_dst(anchor) + (target - mapper.get_src(anchor))), new_state)
+                return (target => Translation(unsafe, pos, mapper.get_dst(anchor) + (target - mapper.get_src(anchor))), new_state)
             else
-                return (Translation(unsafe, gap, Int(mapper.get_dst(anchor))), new_state)
+                return (target => Translation(unsafe, gap, Int(mapper.get_dst(anchor))), new_state)
             end
         else
             (element, cigar_state) = let
@@ -619,7 +619,7 @@ a lazy iterator.
 function pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, pos::Integer)
     pos = Int(pos)::Int
     mapper = PositionMapper(pos, cigar, from, to)
-    return @inline iterate(mapper)[1]
+    return @inline iterate(mapper)[1][2]
 end
 
 """
@@ -633,8 +633,8 @@ end
 Map positions from one coordinate system in the alignment given by `cigar` to another.
 
 Given `pos`, an iterable of sorted (ascending) integers in the coordiate system of `from`,
-returns a `PositionMapper` - an iterable of `Int` of the correspoding coordinate system in `to`,
-given as a `Translation`.
+returns a `PositionMapper` - an iterable of `Pair{Int, Translation}` mapping each input integer,
+in order, to the correspodin coordinate system in `to`, given as a `Translation`.
 
 The coordinates may be `query`, `ref` or `aln`:
 * `query` represents the 1-based index into the query sequence
@@ -642,8 +642,8 @@ The coordinates may be `query`, `ref` or `aln`:
 * `aln` is the index of the alignment itself, i.e. equivalent to the sequence of
   either the query or the ref when gaps according to indel operations of `c`.
 
-For example, given the query positions `p = [4, 9, 11]` and `c::AbstractCIGAR`, the corresponding positions in the reference
-can be obtained by `collect(pos_to_pos(query, ref, c, p))`
+For example, given the query positions `p = [4, 9, 11]` and `c::AbstractCIGAR`, the corresponding
+positions in the reference can be obtained by `[i.second.pos for i in pos_to_pos(query, ref, c, p)]`
 
 See also: [`Translation`](@ref), [`ref_to_query`](@ref), [`aln_to_ref`](@ref) etc.
 
@@ -654,11 +654,11 @@ julia> iter isa CIGARStrings.PositionMapper
 true
 
 julia> collect(iter)
-4-element Vector{Translation}:
- Translation(outside, 0)
- Translation(pos, 4)
- Translation(pos, 11)
- Translation(outside, 0)
+4-element Vector{Pair{Int64, Translation}}:
+  0 => Translation(outside, 0)
+  4 => Translation(pos, 4)
+  9 => Translation(pos, 11)
+ 16 => Translation(outside, 0)
 ```
 """
 function pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, positions)
