@@ -260,13 +260,13 @@ end
             it = pos_to_pos(query, aln, c, (i for i in 1:3:25))
             @test it isa T
             @test length(it) == length(1:3:25)
-            @test collect(it) == [query_to_aln(c, i) for i in 1:3:25]
+            @test collect(it) == [i => query_to_aln(c, i) for i in 1:3:25]
 
             v = [-10, 0, 1, 3, 8, 8, 13, 15, 21]
             for coordinate in [query, ref, aln]
                 it = pos_to_pos(coordinate, coordinate, c, v)
                 @test length(it) == length(v)
-                @test [i.pos for i in collect(it)] == map(v) do i
+                @test [last(i).pos for i in it] == map(v) do i
                     L = if coordinate === query
                         query_length(c)
                     elseif coordinate === ref

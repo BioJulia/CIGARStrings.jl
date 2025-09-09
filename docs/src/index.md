@@ -196,7 +196,8 @@ Translation(pos, 6)
 
 Note that these operations are in __linear time__, as they scan the CIGAR string from the beginning.
 
-To efficiently query multiple translations in the same scan of the CIGAR string, you can pass a sorted (ascending) iterator of integers:
+To efficiently query multiple translations in the same scan of the CIGAR string, you can pass a sorted (ascending) iterator of integers.
+In this case, `pos_to_pos` will return a lazy iterator of `Pair{Int, Translation}`, representing `source_index => destination_index`:
 
 ```jldoctest
 julia> c = CIGAR("4M3D2M2I3M"); # alignment above
@@ -207,11 +208,11 @@ julia> length(it)
 4
 
 julia> collect(it)
-4-element Vector{Translation}:
- Translation(pos, 1)
- Translation(pos, 8)
- Translation(pos, 9)
- Translation(pos, 12)
+4-element Vector{Pair{Int64, Translation}}:
+  1 => Translation(pos, 1)
+  5 => Translation(pos, 8)
+  6 => Translation(pos, 9)
+ 11 => Translation(pos, 12)
 ```
 
 ```@docs
