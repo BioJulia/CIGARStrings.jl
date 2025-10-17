@@ -20,6 +20,7 @@ CIGARStrings.try_parse
 ```
 
 ```@docs
+unsafe_switch_memory
 OP_M
 OP_I
 OP_D

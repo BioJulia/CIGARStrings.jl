@@ -237,3 +237,7 @@ end
 query_length(x::BAMCIGAR) = x.query_len % Int
 ref_length(x::BAMCIGAR) = x.ref_len % Int
 aln_length(x::BAMCIGAR) = x.aln_len % Int
+
+function unsafe_switch_memory(x::BAMCIGAR, mem::ImmutableMemoryView{UInt8})
+    return BAMCIGAR(unsafe, mem, x.aln_len, x.ref_len, x.query_len)
+end

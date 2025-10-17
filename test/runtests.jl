@@ -38,6 +38,39 @@ using MemoryViews
         ]
         @test CIGARStrings.try_parse(CIGAR, bad).kind == err
     end
+
+    @testset "unsafe_switch_memory" begin
+        for str in [
+                "",
+                "500S",
+                "10H",
+                "100M",
+                "5H9S1D1D1D2I9S6H",
+            ]
+            padded = collect(codeunits(str))
+            pushfirst!(padded, 0x01, 0x02, 0x03)
+            push!(padded, 0x61, 0x62, 0x63)
+            vw = MemoryView(padded[4:(end - 3)])
+            cigar = CIGAR(vw)
+            for T in [CIGAR, BAMCIGAR]
+                c = T === CIGAR ? cigar : BAMCIGAR(cigar)
+                cp = collect(MemoryView(c))
+                c2 = unsafe_switch_memory(c, ImmutableMemoryView(cp))
+                @test MemoryView(c) == MemoryView(c2)
+                @test c == c2
+                if !isempty(MemoryView(c))
+                    @test MemoryView(c) !== MemoryView(c2)
+                end
+            end
+        end
+    end
+
+    s = "1H4S19M33I191P9N1X22=3M1H"
+    for cig in [CIGAR(s), BAMCIGAR(CIGAR(s))]
+        cig2 = copy(cig)
+        @test cig == cig2
+        @test MemoryView(cig) !== MemoryView(cig2)
+    end
 end
 
 @testset "Iteration" begin

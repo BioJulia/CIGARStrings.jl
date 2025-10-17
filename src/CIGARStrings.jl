@@ -5,7 +5,8 @@ export CIGAR,
     CIGARElement, ref_length, aln_length, query_length, aln_identity,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref, Translation, count_matches,
-    BAMCIGAR, AbstractCIGAR, cigar_view!, ref, query, aln, pos_to_pos
+    BAMCIGAR, AbstractCIGAR, cigar_view!, ref, query, aln, pos_to_pos,
+    unsafe_switch_memory
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
     TranslationKind, PositionMapper
@@ -252,6 +253,8 @@ This abstract type is (not yet) a defined interface.
 Its concrete subtypes are `CIGAR` and `BAMCIGAR`.
 """
 abstract type AbstractCIGAR end
+
+Base.copy(x::AbstractCIGAR) = unsafe_switch_memory(x, copy(MemoryView(x)))
 
 Base.eltype(::Type{<:AbstractCIGAR}) = CIGARElement
 
