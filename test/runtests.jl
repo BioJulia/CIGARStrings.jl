@@ -53,7 +53,7 @@ using MemoryViews
             vw = MemoryView(padded[4:(end - 3)])
             cigar = CIGAR(vw)
             for T in [CIGAR, BAMCIGAR]
-                c = T isa CIGAR ? cigar : BAMCIGAR(cigar)
+                c = T === CIGAR ? cigar : BAMCIGAR(cigar)
                 cp = collect(MemoryView(c))
                 c2 = unsafe_switch_memory(c, ImmutableMemoryView(cp))
                 @test MemoryView(c) == MemoryView(c2)
@@ -63,6 +63,13 @@ using MemoryViews
                 end
             end
         end
+    end
+
+    s = "1H4S19M33I191P9N1X22=3M1H"
+    for cig in [CIGAR(s), BAMCIGAR(CIGAR(s))]
+        cig2 = copy(cig)
+        @test cig == cig2
+        @test MemoryView(cig) !== MemoryView(cig2)
     end
 end
 
