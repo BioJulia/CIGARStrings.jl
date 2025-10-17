@@ -172,3 +172,33 @@ end
 query_length(x::CIGAR) = x.query_len % Int
 ref_length(x::CIGAR) = x.ref_len % Int
 aln_length(x::CIGAR) = x.aln_len % Int
+
+"""
+    unsafe_switch_memory(cigar::T, mem::ImmutableMemoryView{UInt8})::T where {T <: AbstractCIGAR}
+
+Create a new instance of `typeof(cigar)` equal to `cigar`, but using the new memory
+`mem` which must be equal to the existing memory backing `cigar`.
+This operation does not do any validation.
+
+This function is unsafe, because it assumes that `mem == MemoryView(cigar)`.
+If this assumption is violated, any subsequent operation on the resuling `AbstractCIGAR`
+may cause undefined behaviour.
+
+# Examples
+```jldoctest
+julia> mem = MemoryView("5S12M1X8M10S");
+
+julia> cigar_1 = CIGAR(mem);
+
+julia> cigar_2 = unsafe_switch_memory(cigar_1, copy(mem));
+
+julia> cigar_1 == cigar_2
+true
+
+julia> MemoryView(cigar_1) === MemoryView(cigar_2)
+false
+```
+"""
+function unsafe_switch_memory(x::CIGAR, mem::ImmutableMemoryView{UInt8})
+    return CIGAR(unsafe, mem, x.n_ops, x.aln_len, x.ref_len, x.query_len)
+end

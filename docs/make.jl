@@ -2,6 +2,7 @@ using Documenter, CIGARStrings
 
 meta = quote
     using CIGARStrings
+    using MemoryViews
     cigar = CIGAR("9H1S15M1D3X3=17M12I8S")
 end
 
