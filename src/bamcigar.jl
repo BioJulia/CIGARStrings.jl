@@ -14,7 +14,8 @@ stored compactly in 32-bit integers.
 Semantically, a BAMCIGAR behaves much similar to a CIGAR.
 
 Construct a BAMCIGAR either from a CIGAR, taking an optional `Vector{UInt8}`
-to use as backing storage, or using [`CIGARStrings.try_parse`](@ref).
+to use as backing storage, or using [`CIGARStrings.try_parse`](@ref),
+or [`BAMCIGAR(::MutableMemoryView{UInt8}, ::CIGAR)`](@ref)
 
 # Examples
 ```jldoctest
@@ -135,20 +136,51 @@ function cigar_view!(v::Vector{UInt8}, x::BAMCIGAR)
 end
 
 BAMCIGAR(x::CIGAR) = BAMCIGAR(x, UInt8[])
+
 function BAMCIGAR(x::CIGAR, v::Vector{UInt8})
     resize!(v, 4 * length(x))
+    return @inbounds BAMCIGAR(MemoryView(v), x)
+end
+
+"""
+    BAMCIGAR(mem::MutableMemoryView{UInt8}, x::CIGAR)::BAMCIGAR
+
+Construct a `BAMCIGAR` equal to `x`, using the memory `mem`.
+After calling this, `mem` may not be mutated, and is considered
+owned by the resulting `BAMCIGAR`.
+
+Throw a `BoundsError` if `length(mem) < 4 * length(x)`.
+
+# Examples
+```jldoctest
+julia> x = CIGAR("150M3D9S");
+
+julia> mem = MemoryView(zeros(UInt8, 15));
+
+julia> cigar = BAMCIGAR(mem, x)
+BAMCIGAR(CIGAR("150M3D9S"))
+
+julia> parent(MemoryView(cigar)) === parent(mem)
+true
+```
+"""
+function BAMCIGAR(mem::MutableMemoryView{UInt8}, x::CIGAR)
+    @boundscheck if length(mem) < 4 * length(x)
+        throw(BoundsError(mem, 4 * length(x)))
+    end
+    mem = @inbounds mem[1:(4 * length(x))]
     i = 1
     for element in x
         u = getfield(element, :x)
         for _ in 1:4
-            @inbounds v[i] = u % UInt8
+            @inbounds mem[i] = u % UInt8
             i += 1
             u >>= 8
         end
     end
     return BAMCIGAR(
         unsafe,
-        ImmutableMemoryView(v),
+        ImmutableMemoryView(mem),
         x.aln_len,
         x.ref_len,
         x.query_len

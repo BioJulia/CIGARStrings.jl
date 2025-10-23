@@ -10,6 +10,7 @@ end
 
 ```@docs; canonical = false
 CIGAR
+BAMCIGAR
 CIGARElement
 CIGAROp
 Translation

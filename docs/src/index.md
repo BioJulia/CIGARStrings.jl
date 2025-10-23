@@ -236,6 +236,7 @@ However, in order to make zero-copy CIGARs possible, the `BAMCIGAR` type is back
 
 ```@docs
 CIGARStrings.BAMCIGAR
+CIGARStrings.BAMCIGAR(::MutableMemoryView{UInt8}, ::CIGAR)
 ```
 
 A `BAMCIGAR` can be constructed from its binary representation, using any type which implements `MemoryViews.MemoryView`:
