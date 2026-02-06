@@ -181,7 +181,7 @@ Create a new instance of `typeof(cigar)` equal to `cigar`, but using the new mem
 This operation does not do any validation.
 
 This function is unsafe, because it assumes that `mem == MemoryView(cigar)`.
-If this assumption is violated, any subsequent operation on the resuling `AbstractCIGAR`
+If this assumption is violated, any subsequent operation on the resulting `AbstractCIGAR`
 may cause undefined behaviour.
 
 # Examples
