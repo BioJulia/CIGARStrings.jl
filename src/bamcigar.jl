@@ -29,7 +29,6 @@ true
 julia> CIGAR(b)
 CIGAR("9S123M1=3I15M2H")
 ```
-
 """
 struct BAMCIGAR <: AbstractCIGAR
     mem::ImmutableMemoryView{UInt8}
@@ -272,4 +271,29 @@ aln_length(x::BAMCIGAR) = x.aln_len % Int
 
 function unsafe_switch_memory(x::BAMCIGAR, mem::ImmutableMemoryView{UInt8})
     return BAMCIGAR(unsafe, mem, x.aln_len, x.ref_len, x.query_len)
+end
+
+function count_matches(x::BAMCIGAR, mismatches::Integer)::Int
+    mismatches = UInt(mismatches)::UInt
+    n_M = UInt(0)
+    n_X = UInt(0)
+    n_Eq = UInt(0)
+    mem = x.mem
+    GC.@preserve mem begin
+        @inbounds for i in 1:4:length(mem)
+            u = unsafe_load(Ptr{UInt32}(pointer(mem, i)))
+            op = u & 0x0f
+            len = (u >>> 4) % UInt
+            n_Eq += (op == 0x07) * len
+            n_X += (op == 0x08) * len
+            n_M += (op == 0x00) * len
+        end
+    end
+    if mismatches > n_M + n_X
+        throw(DomainError(mismatches, "Mismatches exceed number of possible mismatches in the BAMCIGAR"))
+    end
+    if mismatches < n_X
+        throw(DomainError(mismatches, "Mismatches is lower than minimum possible mismatches in BAMCIGAR"))
+    end
+    return (n_Eq % Int) + (n_M - mismatches + n_X) % Int
 end

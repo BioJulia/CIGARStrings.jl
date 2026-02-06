@@ -180,14 +180,12 @@ end
 
 Base.show(io::IO, op::CIGAROp) = print(io, string("OP_", STRING_LUT[reinterpret(UInt8, op) + 0x01]))
 
-const LUT = let
-    n = typemax(UInt128)
-    for (char, op) in zip("MIDNSHP=X", [OP_M, OP_I, OP_D, OP_N, OP_S, OP_H, OP_P, OP_Eq, OP_X])
-        shift = 4 * (char - '=')
-        n &= ~(UInt128(0x0f) << shift)
-        n |= UInt128(reinterpret(UInt8, op)) << shift
+const OP_LUT = let
+    lut = fill(0xff, 28)  # 'X' - '=' + 1
+    for (char, val) in zip("MIDNSHP=X", 0:8)
+        lut[char - '=' + 1] = val
     end
-    n
+    NTuple{28, UInt8}(lut)
 end
 
 """
@@ -455,29 +453,44 @@ julia> aln_length(CIGAR("1S5M2D6M2I5M"))
 """
 function aln_length end
 
-function count_matches(x::AbstractCIGAR, mismatches::Integer)::Int
-    mismatches = UInt(mismatches)::UInt
-    n_M = UInt(0)
-    n_X = UInt(0)
-    n_Eq = UInt(0)
-    for i in x
-        n_Eq += (i.op === OP_Eq) * (i.len % UInt)
-        n_X += (i.op === OP_X) * (i.len % UInt)
-        n_M += (i.op === OP_M) * (i.len % UInt)
-    end
-    if mismatches > n_M + n_X
-        error("Mismatches exceed number of possible mismatches in the CIGAR")
-    end
-    if mismatches < n_X
-        error("Mismatches is lower than minimum possible mismatches in CIGAR")
-    end
-    return (n_Eq % Int) + (n_M - mismatches + n_X) % Int
-end
+"""
+    count_matches(::AbstractCIGAR, mismatches::Integer)::Int
+
+Count the number of matches in the `AbstractCIGAR`, given the input number
+of `mismatches`.
+The `mismatches` argument is necessary, because `OP_M` is ambiguous, and
+can encode any combination of matches and mismatches.
+
+If `mismatches` is not in `X:(M+X)` where `M` is the number of symbols
+marked `OP_M`, and `X` the number of `OP_X`, throw a `DomainError`.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3S9M2I15=6X7=10M3S"); # 19M, 22=, 6X
+
+julia> count_matches(c, 8)
+39
+
+julia> count_matches(c, 25)
+22
+
+julia> count_matches(c, 5) # lower bound is 6
+ERROR: DomainError
+[...]
+
+julia> count_matches(c, 26) # upper bound is 25
+ERROR: DomainError
+[...]
+```
+"""
+function count_matches end
+
 
 """
     aln_identity(::AbstractCIGAR, mismatches::Int)::Float64
 
-Compute the alignment identity of the `CIGAR`, computed as the number of matches
+Compute the alignment identity of the `AbstractCIGAR`,
+computed as the number of matches
 (not mismatches) divided by alignment length.
 Since the CIGAR itself may not provide information about the precise number of
 mismatches, the amount of mismatches is an argument.
@@ -800,6 +813,12 @@ true
 ```
 """
 function is_compatible(a::AbstractCIGAR, b::AbstractCIGAR)::Bool
+    # These operations are O(1) for CIGAR and BAMCIGAR.
+    # We don't check length(a), because "2M" is compat with "1M1M"
+    aln_length(a) == aln_length(b) || return false
+    query_length(a) == query_length(b) || return false
+    ref_length(a) == ref_length(b) || return false
+
     # We skip OP_P, which has no semantics meaning when comparing CIGARs
     ait = next_meaningful(a, iterate(a))
     bit = next_meaningful(b, iterate(b))

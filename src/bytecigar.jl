@@ -66,7 +66,7 @@ function Base.iterate(
             n = (10 * n) + b
         else
             b -= UInt8('=') - UInt8('0')
-            enc = ((LUT >>> ((4 * b) & 127)) % UInt8) & 0x0f
+            enc = @inbounds OP_LUT[min(b + 1, 28)]
             op = reinterpret(CIGAROp, enc)
             return (CIGARElement(unsafe, op, n % UInt32), i + 1)
         end
@@ -127,8 +127,8 @@ function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
         else
             b -= UInt8('=') - UInt8('0')
             b > (UInt8('X') - UInt8('=')) && return CIGARError(i, Errors.InvalidOperation)
-            enc = ((LUT >>> ((4 * b) & 127)) % UInt8) & 0x0f
-            enc == 0x0f && return CIGARError(i, Errors.InvalidOperation)
+            enc = @inbounds OP_LUT[b + 1]
+            enc == 0xff && return CIGARError(i, Errors.InvalidOperation)
             iszero(n) && return CIGARError(i, Errors.ZeroLength)
             op = reinterpret(CIGAROp, enc)
             if op === OP_H
@@ -201,4 +201,23 @@ false
 """
 function unsafe_switch_memory(x::CIGAR, mem::ImmutableMemoryView{UInt8})
     return CIGAR(unsafe, mem, x.n_ops, x.aln_len, x.ref_len, x.query_len)
+end
+
+function count_matches(x::CIGAR, mismatches::Integer)::Int
+    mismatches = UInt(mismatches)::UInt
+    n_M = UInt(0)
+    n_X = UInt(0)
+    n_Eq = UInt(0)
+    for i in x
+        n_Eq += (i.op === OP_Eq) * (i.len % UInt)
+        n_X += (i.op === OP_X) * (i.len % UInt)
+        n_M += (i.op === OP_M) * (i.len % UInt)
+    end
+    if mismatches > n_M + n_X
+        throw(DomainError(mismatches, "Mismatches exceed number of possible mismatches in the CIGAR"))
+    end
+    if mismatches < n_X
+        throw(DomainError(mismatches, "Mismatches is lower than minimum possible mismatches in CIGAR"))
+    end
+    return (n_Eq % Int) + (n_M - mismatches + n_X) % Int
 end
