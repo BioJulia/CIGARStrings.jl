@@ -372,4 +372,107 @@ end
 # ref length
 # aln length
 
+@testset "is_compatible" begin
+    @testset "CIGAR with CIGAR" begin
+        # Empty CIGARs
+        @test is_compatible(CIGAR(""), CIGAR(""))
+
+        # Identical CIGARs
+        @test is_compatible(CIGAR("10M"), CIGAR("10M"))
+        @test is_compatible(CIGAR("5M3I2D"), CIGAR("5M3I2D"))
+
+        # Collapsing consecutive operations
+        @test is_compatible(CIGAR("1M1M"), CIGAR("2M"))
+        @test is_compatible(CIGAR("1D1D1D"), CIGAR("3D"))
+        @test is_compatible(CIGAR("5I"), CIGAR("2I3I"))
+        @test is_compatible(CIGAR("1M1M1M1M"), CIGAR("2M2M"))
+
+        # OP_M encompasses OP_X and OP_Eq
+        @test is_compatible(CIGAR("3M"), CIGAR("1X1M1="))
+        @test is_compatible(CIGAR("1D2M3I"), CIGAR("1D1X1M3I"))
+        @test is_compatible(CIGAR("5M"), CIGAR("5="))
+        @test is_compatible(CIGAR("5M"), CIGAR("5X"))
+        @test is_compatible(CIGAR("10M"), CIGAR("3=4X3="))
+
+        # OP_S and OP_H are semantically identical
+        @test is_compatible(CIGAR("2S"), CIGAR("2H"))
+        @test is_compatible(CIGAR("3H5M2S"), CIGAR("3S5M2H"))
+        @test is_compatible(CIGAR("1H1S"), CIGAR("2H"))
+        @test is_compatible(CIGAR("1S1H"), CIGAR("2S"))
+
+        # OP_P has no semantic meaning and is skipped
+        @test is_compatible(CIGAR("1D1P2D1M3P"), CIGAR("3D1M"))
+        @test is_compatible(CIGAR("5P"), CIGAR(""))
+        @test is_compatible(CIGAR("1P1P1P"), CIGAR(""))
+        @test is_compatible(CIGAR("2M1P3M"), CIGAR("2M3M"))
+        @test is_compatible(CIGAR("1P2M1P3I1P"), CIGAR("2M3I"))
+
+        # Complex combinations
+        @test is_compatible(CIGAR("1H1S3M1P2I"), CIGAR("2S1=2M2I"))
+
+        # Incompatible CIGARs
+        @test !is_compatible(CIGAR("1="), CIGAR("1X"))
+        @test !is_compatible(CIGAR("5M"), CIGAR("4M"))
+        @test !is_compatible(CIGAR("5M"), CIGAR("6M"))
+        @test !is_compatible(CIGAR("3M2I"), CIGAR("3M2D"))
+        @test !is_compatible(CIGAR("1D1M"), CIGAR("1M1D"))
+        @test !is_compatible(CIGAR("5="), CIGAR("4=1X"))
+        @test !is_compatible(CIGAR("10M"), CIGAR(""))
+        @test !is_compatible(CIGAR(""), CIGAR("10M"))
+        @test !is_compatible(CIGAR("1S2M3I2H"), CIGAR("1S2M3I"))
+    end
+
+    @testset "BAMCIGAR with BAMCIGAR" begin
+        # Empty CIGARs
+        @test is_compatible(BAMCIGAR(CIGAR("")), BAMCIGAR(CIGAR("")))
+
+        # Identical CIGARs
+        @test is_compatible(BAMCIGAR(CIGAR("10M")), BAMCIGAR(CIGAR("10M")))
+
+        # Collapsing consecutive operations
+        @test is_compatible(BAMCIGAR(CIGAR("1M1M")), BAMCIGAR(CIGAR("2M")))
+        @test is_compatible(BAMCIGAR(CIGAR("1D1D1D")), BAMCIGAR(CIGAR("3D")))
+
+        # OP_M encompasses OP_X and OP_Eq
+        @test is_compatible(BAMCIGAR(CIGAR("3M")), BAMCIGAR(CIGAR("1X1M1=")))
+        @test is_compatible(BAMCIGAR(CIGAR("1D2M3I")), BAMCIGAR(CIGAR("1D1X1M3I")))
+
+        # OP_S and OP_H are semantically identical
+        @test is_compatible(BAMCIGAR(CIGAR("2S")), BAMCIGAR(CIGAR("2H")))
+        @test is_compatible(BAMCIGAR(CIGAR("3H5M2S")), BAMCIGAR(CIGAR("3S5M2H")))
+
+        # OP_P has no semantic meaning
+        @test is_compatible(BAMCIGAR(CIGAR("1D1P2D1M3P")), BAMCIGAR(CIGAR("3D1M")))
+        @test is_compatible(BAMCIGAR(CIGAR("5P")), BAMCIGAR(CIGAR("")))
+
+        # Incompatible CIGARs
+        @test !is_compatible(BAMCIGAR(CIGAR("1=")), BAMCIGAR(CIGAR("1X")))
+        @test !is_compatible(BAMCIGAR(CIGAR("5M")), BAMCIGAR(CIGAR("4M")))
+        @test !is_compatible(BAMCIGAR(CIGAR("3M2I")), BAMCIGAR(CIGAR("3M2D")))
+    end
+
+    @testset "CIGAR with BAMCIGAR" begin
+        # Compatible pairs
+        @test is_compatible(CIGAR("10M"), BAMCIGAR(CIGAR("10M")))
+        @test is_compatible(BAMCIGAR(CIGAR("10M")), CIGAR("10M"))
+
+        @test is_compatible(CIGAR("1M1M"), BAMCIGAR(CIGAR("2M")))
+        @test is_compatible(BAMCIGAR(CIGAR("1M1M")), CIGAR("2M"))
+
+        @test is_compatible(CIGAR("3M"), BAMCIGAR(CIGAR("1X1=1M")))
+        @test is_compatible(BAMCIGAR(CIGAR("5M")), CIGAR("2=3X"))
+
+        @test is_compatible(CIGAR("2S"), BAMCIGAR(CIGAR("2H")))
+        @test is_compatible(BAMCIGAR(CIGAR("3H5M")), CIGAR("3S5M"))
+
+        @test is_compatible(CIGAR("2M1P3M"), BAMCIGAR(CIGAR("5M")))
+        @test is_compatible(BAMCIGAR(CIGAR("1P2D1P")), CIGAR("2D"))
+
+        # Incompatible pairs
+        @test !is_compatible(CIGAR("1="), BAMCIGAR(CIGAR("1X")))
+        @test !is_compatible(BAMCIGAR(CIGAR("5M")), CIGAR("6M"))
+        @test !is_compatible(CIGAR("2M3I"), BAMCIGAR(CIGAR("2M3D")))
+    end
+end
+
 end # module CIGARTests

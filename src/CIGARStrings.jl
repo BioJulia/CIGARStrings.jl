@@ -6,7 +6,7 @@ export CIGAR,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref, Translation, count_matches,
     BAMCIGAR, AbstractCIGAR, cigar_view!, ref, query, aln, pos_to_pos,
-    unsafe_switch_memory
+    unsafe_switch_memory, is_compatible
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
     TranslationKind, PositionMapper
@@ -245,6 +245,13 @@ function Base.getproperty(x::CIGARElement, sym::Symbol)
     end
 end
 Base.propertynames(::CIGARElement) = (:len, :op)
+
+function unsafe_subtract_length(x::CIGARElement, len::UInt32)
+    xx = getfield(x, :x)
+    u = xx >> 4
+    u -= len
+    return CIGARElement(unsafe, u << 4 | (xx & 0x0f))
+end
 
 """
     abstract type AbstractCIGAR
@@ -765,5 +772,101 @@ Translation(gap, 6)
 ```
 """
 aln_to_ref(x::AbstractCIGAR, pos::Integer) = pos_to_pos(aln, ref, x, pos)
+
+"""
+    is_compatible(a::AbstractCIGAR, b::AbstractCIGAR)::Bool
+
+Check if `a` and `b` may refer to the same alignment.
+
+Two distinct CIGARs may refer to the same alignment, because there are multiple
+ways to annotate the same alignment. In particular, the following rules are used
+when determining if distinct CIGAR operations are equivalent:
+* Two consecutive of the same operations may be collapsed, ex: `1M1M` and `2M`
+* An `OP_M` can encompass both `OP_X` and `OP_Eq`, ex: `3M` and `1X1M1=`
+* `OP_S` and `OP_H` are semantically identical, ex: `2S` and `2H` 
+* `OP_P` has no semantic meaning and is skipped: `1D1P2D1M3P` and `3D1M`
+
+# Examples:
+```jldoctest
+julia> is_compatible(CIGAR("1="), CIGAR("1X"))
+false
+
+julia> is_compatible(CIGAR("1D1D1D"), CIGAR("3D"))
+true
+
+julia> is_compatible(CIGAR("1D2M3I"), CIGAR("1D1X1M3I"))
+true
+```
+"""
+function is_compatible(a::AbstractCIGAR, b::AbstractCIGAR)::Bool
+    # We skip OP_P, which has no semantics meaning when comparing CIGARs
+    ait = next_meaningful(a, iterate(a))
+    bit = next_meaningful(b, iterate(b))
+
+    while true
+        # If one of the CIGARs is exhaused, the other must also be
+        if ait === nothing
+            return bit === nothing
+        elseif bit === nothing
+            return false
+        end
+
+        (ea, sa) = ait
+        (eb, sb) = bit
+
+        # If the operation is not compatible, the CIGARs are not compatible
+        is_op_compatible(ea.op, eb.op) || return false
+
+        # We consume N symbols, where N is the smallest between the next
+        # element in A or B. This means we need to get the next element
+        # from A, B or both.
+        # This is to ensure cases like A="3M" and B="1X2=" are considered
+        # equivalent, where B must iterate two elements for A's only element.
+        if ea.len < eb.len
+            ait = next_meaningful(a, iterate(a, sa))
+            bit = (unsafe_subtract_length(eb, ea.len % UInt32), sb)
+        elseif ea.len > eb.len
+            bit = next_meaningful(b, iterate(b, sb))
+            ait = (unsafe_subtract_length(ea, eb.len % UInt32), sa)
+        else
+            ait = next_meaningful(a, iterate(a, sa))
+            bit = next_meaningful(b, iterate(b, sb))
+        end
+    end
+    return true # unreachable
+end
+
+# Get next `iterate` return value which is not an OP_P,
+# since that has no semantic meaning
+function next_meaningful(
+        cigar::AbstractCIGAR,
+        it_return::Union{Nothing, Tuple{CIGARElement, Any}}
+    )::Union{Nothing, Tuple{CIGARElement, Any}}
+    while it_return !== nothing
+        (elem, state) = it_return
+        elem.op != OP_P && return it_return
+        it_return = iterate(cigar, state)
+    end
+    return nothing
+end
+
+# Below is a bitmask, where each chunk of 7 bits correspond to a CIGAR op.
+# The bitfield is a map of which operations it's compatible with.
+# E.g. OP_S and OP_H are compatible with each other, so they have bit 3
+# in the 7-bit bitfield set.
+
+# Order of bits: X   =   P  H/S   N   D   I
+#          OP_M: 1___1___0___0____0___0___0
+#                       X       =      P        H       S       N      D        I       M
+const COMPAT_LUT = 0b1000000_0100000_0010000_0001000_0001000_0000100_0000010_0000001_1100000
+
+rsh(a::UInt64, b) = a >> (b & 0x3f)
+
+function is_op_compatible(a::CIGAROp, b::CIGAROp)
+    ua = rsh(COMPAT_LUT, 0x07 * reinterpret(UInt8, b))
+    ub = rsh(COMPAT_LUT, 0x07 * reinterpret(UInt8, a))
+    return !iszero(ua & ub & 0b1111111)
+end
+
 
 end # module CIGARStrings
