@@ -154,6 +154,41 @@ julia> aln_identity(CIGAR("3M1D3M1I2M"), 2)
 0.6
 ```
 
+## Comparing CIGARs
+When comparing `CIGAR`s using `==`, it will check if the `CIGAR`s are literally identical, in the
+sense that they are composed of the same bytes:
+
+```jldoctest compare
+julia> c1 = CIGAR("10M");
+
+julia> c2 = CIGAR("4=1X5=");
+
+julia> c3 = CIGAR("10M");
+
+julia> c1 == c2
+false
+
+julia> c1 == c3
+true
+```
+However, in the above example, since the CIGAR operation `M` signifies a match or a mismatch, all three
+CIGARs are indeed compatible, since `10M` is also a valid CIGAR annotation for the same alignment
+as `4=1X5=`.
+
+This notion of compatibility tested with `is_compatible`:
+
+```jldoctest compare
+julia> is_compatible(c1, c2)
+true
+
+julia> is_compatible(CIGAR("1X1M"), CIGAR("1=1M"))
+false
+```
+
+```@docs
+is_compatible
+```
+
 ## Position translation
 Sometimes it may be necessary to answer questions of the form
 "which reference position does query position 8 align to?".
