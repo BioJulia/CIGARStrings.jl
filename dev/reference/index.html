@@ -124,12 +124,31 @@ as the lengths of all <code>CIGARElement</code>s of type <code>M</code>, <code>I
 padding and skips are not part of the alignment, but still part of the CIGAR.
 Therefore, the alignment length is the same as the lengths of all <code>CIGARElement</code>s
 of type <code>M</code>, <code>I</code>, <code>D</code>, <code>=</code> and <code>X</code>.</p><p>See also: <a href="#CIGARStrings.query_length"><code>query_length</code></a>, <a href="#CIGARStrings.ref_length"><code>ref_length</code></a></p><p><strong>Example</strong></p><pre><code class="language-julia-repl hljs">julia&gt; aln_length(CIGAR(&quot;1S5M2D6M2I5M&quot;))
-20</code></pre></div></section></details></article><article><details class="docstring" open="true"><summary id="CIGARStrings.aln_identity"><a class="docstring-binding" href="#CIGARStrings.aln_identity"><code>CIGARStrings.aln_identity</code></a> — <span class="docstring-category">Function</span></summary><section><div><pre><code class="language-julia hljs">aln_identity(::AbstractCIGAR, mismatches::Int)::Float64</code></pre><p>Compute the alignment identity of the <code>CIGAR</code>, computed as the number of matches
+20</code></pre></div></section></details></article><article><details class="docstring" open="true"><summary id="CIGARStrings.aln_identity"><a class="docstring-binding" href="#CIGARStrings.aln_identity"><code>CIGARStrings.aln_identity</code></a> — <span class="docstring-category">Function</span></summary><section><div><pre><code class="language-julia hljs">aln_identity(::AbstractCIGAR, mismatches::Int)::Float64</code></pre><p>Compute the alignment identity of the <code>AbstractCIGAR</code>,
+computed as the number of matches
 (not mismatches) divided by alignment length.
 Since the CIGAR itself may not provide information about the precise number of
 mismatches, the amount of mismatches is an argument.
 The result is always in [0.0, 1.0].</p><p><strong>Example</strong></p><pre><code class="language-julia-repl hljs">julia&gt; aln_identity(CIGAR(&quot;3M1D3M1I2M&quot;), 2)
-0.6</code></pre></div></section></details></article><article><details class="docstring" open="true"><summary id="CIGARStrings.query_to_ref"><a class="docstring-binding" href="#CIGARStrings.query_to_ref"><code>CIGARStrings.query_to_ref</code></a> — <span class="docstring-category">Function</span></summary><section><div><pre><code class="language-julia hljs">query_to_ref(x::AbstractCIGAR, pos::Integer)::Translation</code></pre><p>Get the 1-based reference position aligning to query position <code>pos</code>.
+0.6</code></pre></div></section></details></article><article><details class="docstring" open="true"><summary id="CIGARStrings.count_matches"><a class="docstring-binding" href="#CIGARStrings.count_matches"><code>CIGARStrings.count_matches</code></a> — <span class="docstring-category">Function</span></summary><section><div><pre><code class="language-julia hljs">count_matches(::AbstractCIGAR, mismatches::Integer)::Int</code></pre><p>Count the number of matches in the <code>AbstractCIGAR</code>, given the input number
+of <code>mismatches</code>.
+The <code>mismatches</code> argument is necessary, because <code>OP_M</code> is ambiguous, and
+can encode any combination of matches and mismatches.</p><p>If <code>mismatches</code> is not in <code>X:(M+X)</code> where <code>M</code> is the number of symbols
+marked <code>OP_M</code>, and <code>X</code> the number of <code>OP_X</code>, throw a <code>DomainError</code>.</p><p><strong>Examples</strong></p><pre><code class="language-julia-repl hljs">julia&gt; c = CIGAR(&quot;3S9M2I15=6X7=10M3S&quot;); # 19M, 22=, 6X
+
+julia&gt; count_matches(c, 8)
+39
+
+julia&gt; count_matches(c, 25)
+22
+
+julia&gt; count_matches(c, 5) # lower bound is 6
+ERROR: DomainError
+[...]
+
+julia&gt; count_matches(c, 26) # upper bound is 25
+ERROR: DomainError
+[...]</code></pre></div></section></details></article><article><details class="docstring" open="true"><summary id="CIGARStrings.query_to_ref"><a class="docstring-binding" href="#CIGARStrings.query_to_ref"><code>CIGARStrings.query_to_ref</code></a> — <span class="docstring-category">Function</span></summary><section><div><pre><code class="language-julia hljs">query_to_ref(x::AbstractCIGAR, pos::Integer)::Translation</code></pre><p>Get the 1-based reference position aligning to query position <code>pos</code>.
 See <a href="../#CIGARStrings.Translation"><code>Translation</code></a> for more details.</p><p><strong>Examples</strong></p><pre><code class="language-julia-repl hljs">julia&gt; c = CIGAR(&quot;3M2D1M4I2M&quot;);
 
 julia&gt; query_to_ref(c, 4)
@@ -153,4 +172,4 @@ Translation(pos, 8)</code></pre></div></section></details></article><article><de
 See <a href="../#CIGARStrings.Translation"><code>Translation</code></a> for more details.</p><p><strong>Examples</strong></p><pre><code class="language-julia-repl hljs">julia&gt; c = CIGAR(&quot;3M2D1M4I2M&quot;);
 
 julia&gt; aln_to_ref(c, 9)
-Translation(gap, 6)</code></pre></div></section></details></article></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Friday 6 February 2026 13:06">Friday 6 February 2026</span>. Using Julia version 1.14.0-DEV.1689.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+Translation(gap, 6)</code></pre></div></section></details></article></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Friday 6 February 2026 15:26">Friday 6 February 2026</span>. Using Julia version 1.14.0-DEV.1689.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

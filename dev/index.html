@@ -46,7 +46,8 @@ CIGAR(&quot;2M1D3M&quot;)
 julia&gt; CIGAR(&quot;1M1W1S&quot;)
 ERROR: Error around byte 4: Invalid operation. Possible values are &quot;MIDNSHP=X&quot;.
 [...]</code></pre><p>Since CIGAR strings occur in various bioinformatics file formats, it is expected
-that users of CIGARStrings.jl will construct <code>CIGAR</code>s from a view into a buffer storing a chunk of the file.</p><p>This is zero-copy, and <em>ought</em> not to allocate (although it currently does, due to <a href="https://github.com/JuliaLang/julia/issues/53584">a limitation of the Julia compiler</a>):</p><p>For example:</p><pre><code class="language-julia-repl hljs">julia&gt; data = b&quot;some format with CIGAR: 15M9D18M etc&quot;;
+that users of CIGARStrings.jl will construct <code>CIGAR</code>s from a view into a buffer storing a chunk of the file.</p><p>This is zero-copy, and will not to allocate on Julia 1.14 and forward.
+For example:</p><pre><code class="language-julia-repl hljs">julia&gt; data = b&quot;some format with CIGAR: 15M9D18M etc&quot;;
 
 julia&gt; buffer = collect(data);
 
@@ -92,11 +93,12 @@ julia&gt; query_length(c)
 12
 
 julia&gt; aln_length(c)
-15</code></pre><p>The alignment identity (number of matches, not mismatches divided by alignment length)
+15</code></pre><p>Since the CIGAR operation <code>M</code> (<code>OP_M</code>) is ambiguous to whether is represents matches,
+mismatches, or a combination of these, the function <a href="reference/#CIGARStrings.count_matches"><code>count_matches</code></a> can be used to
+count the number of matches in a CIGAR given the number of mismatches.</p><p>The number of mismatches are typically output by mappers, making this information
+handily accessible:</p><p>The alignment identity (number of matches, not mismatches divided by alignment length)
 can be obtained with <a href="reference/#CIGARStrings.aln_identity"><code>aln_identity</code></a>.
-Since the number of mismatches may not be known from the CIGAR itself (i.e. &quot;100M&quot;
-could have anywhere from 0 to 100 mismatches), the mismatches is passed in as an argument:</p><pre><code class="language-julia-repl hljs">julia&gt; aln_identity(CIGAR(&quot;3M1D3M1I2M&quot;), 2)
-0.6</code></pre><h2 id="Comparing-CIGARs"><a class="docs-heading-anchor" href="#Comparing-CIGARs">Comparing CIGARs</a><a id="Comparing-CIGARs-1"></a><a class="docs-heading-anchor-permalink" href="#Comparing-CIGARs" title="Permalink"></a></h2><p>When comparing <code>CIGAR</code>s using <code>==</code>, it will check if the <code>CIGAR</code>s are literally identical, in the
+Like <a href="reference/#CIGARStrings.count_matches"><code>count_matches</code></a>, this takes the number of mismatches as an argument:</p><h2 id="Comparing-CIGARs"><a class="docs-heading-anchor" href="#Comparing-CIGARs">Comparing CIGARs</a><a id="Comparing-CIGARs-1"></a><a class="docs-heading-anchor-permalink" href="#Comparing-CIGARs" title="Permalink"></a></h2><p>When comparing <code>CIGAR</code>s using <code>==</code>, it will check if the <code>CIGAR</code>s are literally identical, in the
 sense that they are composed of the same bytes:</p><pre><code class="language-julia-repl hljs">julia&gt; c1 = CIGAR(&quot;10M&quot;);
 
 julia&gt; c2 = CIGAR(&quot;4=1X5=&quot;);
@@ -270,4 +272,4 @@ julia&gt; mem_view == v
 true
 
 julia&gt; String(mem_view) == string(CIGAR(bc))
-true</code></pre></div></section></details></article></article><nav class="docs-footer"><a class="docs-footer-nextpage" href="reference/">Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Friday 6 February 2026 13:06">Friday 6 February 2026</span>. Using Julia version 1.14.0-DEV.1689.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+true</code></pre></div></section></details></article></article><nav class="docs-footer"><a class="docs-footer-nextpage" href="reference/">Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Friday 6 February 2026 15:26">Friday 6 February 2026</span>. Using Julia version 1.14.0-DEV.1689.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
