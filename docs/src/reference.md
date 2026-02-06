@@ -39,6 +39,7 @@ ref_length
 query_length
 aln_length
 aln_identity
+count_matches
 query_to_ref
 query_to_aln
 ref_to_query

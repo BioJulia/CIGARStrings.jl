@@ -64,9 +64,9 @@ ERROR: Error around byte 4: Invalid operation. Possible values are "MIDNSHP=X".
 Since CIGAR strings occur in various bioinformatics file formats, it is expected
 that users of CIGARStrings.jl will construct `CIGAR`s from a view into a buffer storing a chunk of the file.
 
-This is zero-copy, and _ought_ not to allocate (although it currently does, due to [a limitation of the Julia compiler](https://github.com/JuliaLang/julia/issues/53584)):
-
+This is zero-copy, and will not to allocate on Julia 1.14 and forward.
 For example:
+
 ```jldoctest
 julia> data = b"some format with CIGAR: 15M9D18M etc";
 
@@ -144,15 +144,16 @@ julia> aln_length(c)
 15
 ```
 
+Since the CIGAR operation `M` (`OP_M`) is ambiguous to whether is represents matches,
+mismatches, or a combination of these, the function [`count_matches`](@ref) can be used to
+count the number of matches in a CIGAR given the number of mismatches.
+
+The number of mismatches are typically output by mappers, making this information
+handily accessible:
+
 The alignment identity (number of matches, not mismatches divided by alignment length)
 can be obtained with [`aln_identity`](@ref).
-Since the number of mismatches may not be known from the CIGAR itself (i.e. "100M"
-could have anywhere from 0 to 100 mismatches), the mismatches is passed in as an argument:
-
-```jldoctest
-julia> aln_identity(CIGAR("3M1D3M1I2M"), 2)
-0.6
-```
+Like [`count_matches`](@ref), this takes the number of mismatches as an argument:
 
 ## Comparing CIGARs
 When comparing `CIGAR`s using `==`, it will check if the `CIGAR`s are literally identical, in the

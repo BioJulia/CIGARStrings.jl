@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://biojulia.github.io/CIGARStrings.jl/dev)
 [![](https://codecov.io/gh/BioJulia/BioJuliaTemplate.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/BioJulia/CIGARStrings.jl)
 
-This package provides the `CIGAR` type to represent Concise Idiosyncratic Gapped Alignment Reports (CIGARs), popularized in the SAM format.
+This package provides the `CIGAR` and `BAMCIGAR` types to represent Concise Idiosyncratic Gapped Alignment Reports (CIGARs), popularized in the SAM format.
 
 For more information [read the documentation](https://biojulia.github.io/CIGARStrings.jl/dev)
 
