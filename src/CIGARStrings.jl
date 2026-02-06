@@ -11,7 +11,7 @@ export CIGAR,
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
     TranslationKind, PositionMapper
 
-using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView
+using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView, MutableMemoryView
 
 struct Unsafe end
 const unsafe = Unsafe()
