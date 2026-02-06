@@ -212,7 +212,7 @@ function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
         enc = (u % UInt8) & 0x0f
         enc > 0x08 && return CIGARError(idx, Errors.InvalidOperation)
         op = reinterpret(CIGAROp, enc)
-        if op == OP_H
+        if op === OP_H
             if !is_first && u_offset < n_ops - 1
                 return CIGARError(idx, Errors.InvalidHardClip)
             end

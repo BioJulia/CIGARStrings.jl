@@ -93,6 +93,8 @@ function Base.showerror(io::IO, error::CIGARError)
         "Soft clip (S) must be first or last in CIGAR, or preceded or succeeded by a hard clip (H)."
     elseif kind == Errors.Truncated
         "CIGAR string is truncated and ends too early."
+    elseif kind == Errors.NotModFourLength
+        "Cannot parse BAMCIGAR from a memory whose length is not divisible by 4"
     else
         unreachable()
     end
@@ -133,9 +135,9 @@ See also: [`CIGARElement`](@ref)
   instead of `X` or `=`, since the important part of the CIGAR is where the
   insertions and deletions are placed. To determine which bases in an `M`
   are matches and mismatches, the two sequences can be compared, base-wise.
-* `N` means that the region is spans an intron, which means the query sequence
+* `N` means that the region spans an intron, which means the query sequence
   is deleted, but not due to an actual deletion (which would be a `D` operation).
-  It can also be used for other uses where the reference bases is missing
+  It can also be used for other uses where the reference bases are missing
   for another reason than a deletion, if such a use case is found.
 * `S` and `H` are semantically identical. They both signify the end(s) of the
   query sequence which are not part of the alignment. They differ only in whether
@@ -149,7 +151,7 @@ See also: [`CIGARElement`](@ref)
 """
 primitive type CIGAROp 8 end
 
-const (STRING_LUT, BYTE_LUT) = let
+const STRING_LUT = let
     string_lut = Memory{String}(undef, 9)
     byte_lut = Memory{UInt8}(undef, 9)
     for (i, (name, doc)) in enumerate(
@@ -169,12 +171,11 @@ const (STRING_LUT, BYTE_LUT) = let
         sym = Symbol("OP_", name)
         val = reinterpret(CIGAROp, UInt8(i - 1))
         nm = name == "Eq" ? "=" : name
-        byte_lut[i] = UInt8(only(nm))
         @eval begin
             @doc $(string("`'", nm, "'`: ", doc)) const $(sym) = reinterpret(CIGAROp, $(UInt8(i - 1)))
         end
     end
-    (Tuple(string_lut), Tuple(byte_lut))
+    Tuple(string_lut)
 end
 
 Base.show(io::IO, op::CIGAROp) = print(io, string("OP_", STRING_LUT[reinterpret(UInt8, op) + 0x01]))
@@ -321,11 +322,11 @@ See also: [`Translation`](@ref)
 
 The result of translating from a position in the coordinate system of the 
 query / reference / alignment to a position in one of the others.
-This type contains two documented properies: `kind::TranslationKind` and `pos::Int`.
+This type contains two documented properties: `kind::TranslationKind` and `pos::Int`.
 
 * If the resulting position is outside the target coordinate, `.kind == outside`
   and `pos == 0`
-* If the position maps to a non-gap symbol in the other coodinate system,
+* If the position maps to a non-gap symbol in the other coordinate system,
   `.kind == pos`, and the position is the `pos`'d symbol in the target coordinate
   system.
 * If the position maps to a gap, `pos` is the position of the symbol before the
@@ -621,7 +622,7 @@ n_symbols(::Ref, x::AbstractCIGAR) = ref_length(x)
 n_symbols(::Aln, x::AbstractCIGAR) = aln_length(x)
 
 """
-    pos_to_pos(from::Coordinate, to::Coodinate, cigar::AbstractCIGAR, pos::Integer)::Integer
+    pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, pos::Integer)::Integer
 
 Similar to the generic `pos_to_pos`, but returns the resulting integer immediately instead of returning
 a lazy iterator.
@@ -635,16 +636,16 @@ end
 """
     pos_to_pos(
         from::Coordinate,
-        to::Coodinate,
+        to::Coordinate,
         cigar::AbstractCIGAR,
         pos
     )::PositionMapper
 
 Map positions from one coordinate system in the alignment given by `cigar` to another.
 
-Given `pos`, an iterable of sorted (ascending) integers in the coordiate system of `from`,
+Given `pos`, an iterable of sorted (ascending) integers in the coordinate system of `from`,
 returns a `PositionMapper` - an iterable of `Pair{Int, Translation}` mapping each input integer,
-in order, to the correspodin coordinate system in `to`, given as a `Translation`.
+in order, to the corresponding coordinate system in `to`, given as a `Translation`.
 
 The coordinates may be `query`, `ref` or `aln`:
 * `query` represents the 1-based index into the query sequence
@@ -677,7 +678,7 @@ end
 
 
 """
-    query_to_ref(x::AbstractCIGAR, pos::Integer)::Int
+    query_to_ref(x::AbstractCIGAR, pos::Integer)::Translation
 
 Get the 1-based reference position aligning to query position `pos`.
 See [`Translation`](@ref) for more details.
@@ -693,7 +694,7 @@ Translation(pos, 6)
 query_to_ref(x::AbstractCIGAR, pos::Integer) = pos_to_pos(query, ref, x, pos)
 
 """
-    query_to_aln(x::AbstractCIGAR, pos::Integer)::Int
+    query_to_aln(x::AbstractCIGAR, pos::Integer)::Translation
 
 Get the 1-based alignment position aligning to query position `pos`.
 See [`Translation`](@ref) for more details.
@@ -709,7 +710,7 @@ Translation(pos, 10)
 query_to_aln(x::AbstractCIGAR, pos::Integer) = pos_to_pos(query, aln, x, pos)
 
 """
-    ref_to_query(x::AbstractCIGAR, pos::Integer)::Int
+    ref_to_query(x::AbstractCIGAR, pos::Integer)::Translation
 
 Get the 1-based query position aligning to reference position `pos`.
 See [`Translation`](@ref) for more details.
@@ -726,7 +727,7 @@ ref_to_query(x::AbstractCIGAR, pos::Integer) = pos_to_pos(ref, query, x, pos)
 
 
 """
-    ref_to_aln(x::AbstractCIGAR, pos::Integer)::Int
+    ref_to_aln(x::AbstractCIGAR, pos::Integer)::Translation
 
 Get the 1-based alignment position aligning to reference position `pos`.
 See [`Translation`](@ref) for more details.
@@ -742,7 +743,7 @@ Translation(pos, 11)
 ref_to_aln(x::AbstractCIGAR, pos::Integer) = pos_to_pos(ref, aln, x, pos)
 
 """
-    aln_to_query(x::AbstractCIGAR, pos::Integer)::Int
+    aln_to_query(x::AbstractCIGAR, pos::Integer)::Translation
 
 Get the 1-based query position aligning to alignment position `pos`.
 See [`Translation`](@ref) for more details.
@@ -758,7 +759,7 @@ Translation(pos, 8)
 aln_to_query(x::AbstractCIGAR, pos::Integer) = pos_to_pos(aln, query, x, pos)
 
 """
-    aln_to_ref(x::AbstractCIGAR, pos::Integer)::Int
+    aln_to_ref(x::AbstractCIGAR, pos::Integer)::Translation
 
 Get the 1-based reference position aligning to alignment position `pos`.
 See [`Translation`](@ref) for more details.
