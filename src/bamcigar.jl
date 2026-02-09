@@ -111,6 +111,8 @@ true
 ```
 """
 function cigar_view!(v::Vector{UInt8}, x::BAMCIGAR)
+    # Sizehint to minimum size to reduce further reallocations
+    sizehint!(v, 2 * length(x); shrink=false)
     empty!(v)
     for element in x
         n = element.len % UInt32
@@ -296,4 +298,52 @@ function count_matches(x::BAMCIGAR, mismatches::Integer)::Int
         throw(DomainError(mismatches, "Mismatches is lower than minimum possible mismatches in BAMCIGAR"))
     end
     return (n_Eq % Int) + (n_M - mismatches + n_X) % Int
+end
+
+function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR
+    write_offset = 0
+    # dummy value for type stability, initial value is not used
+    last_element = CIGARElement(unsafe, UInt32(0x00_00_00_10))
+    GC.@preserve mem begin
+        for element in cigar
+            element.op === OP_P && continue
+            op = if element.op === OP_H
+                OP_S
+            elseif element.op ∈ (OP_X, OP_Eq)
+                OP_M
+            else
+                element.op
+            end
+            u = if op === last_element.op && write_offset > 0
+                # Overwrite the previous one
+                len = element.len + last_element.len
+                if len > 268435455
+                    throw(CIGARError(write_offset + 1, Errors.IntegerOverflow))
+                end
+                write_offset -= 4
+                ((len % UInt32) << 4) | reinterpret(UInt8, op)
+            else
+                # Append to end
+                @boundscheck checkbounds(mem, write_offset + 4)
+                (getfield(element, :x) & 0xff_ff_ff_f0) | reinterpret(UInt8, op)
+            end
+            ptr = Ptr{UInt32}(pointer(mem) + write_offset)
+            unsafe_store!(ptr, u)
+            write_offset += 4
+            last_element = CIGARElement(unsafe, u)
+        end
+    end
+    mem = @inbounds ImmutableMemoryView(mem)[1:write_offset]
+    return BAMCIGAR(unsafe, mem, cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
+
+function normalize(cigar::BAMCIGAR)
+    return @inbounds @inline normalize!(cigar, similar(MemoryView(cigar)))
+end
+
+function unsafe_normalize(cigar::BAMCIGAR)
+    mem = MemoryView(cigar)
+    newmem = MemoryViews.unsafe_from_parts(mem.ref, length(mem))
+    # See comment in `unsafe_normalize(::CIGAR)` for why aliasing is valid
+    return @inbounds @inline normalize!(cigar, newmem)
 end

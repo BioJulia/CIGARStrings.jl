@@ -178,14 +178,6 @@ as `4=1X5=`.
 
 This notion of compatibility tested with `is_compatible`:
 
-```jldoctest compare
-julia> is_compatible(c1, c2)
-true
-
-julia> is_compatible(CIGAR("1X1M"), CIGAR("1=1M"))
-false
-```
-
 ```@docs
 is_compatible
 ```
@@ -256,6 +248,21 @@ pos_to_pos
 Translation
 CIGARStrings.TranslationKind
 ```
+
+## Normalization
+The CIGAR format is redundant, in that the same alignment can be written in multiple different ways. In particular:
+
+* The `S` and `H` operation is semantically identical, so `5H10M` and `5S10M` means the same thing
+* The `P` operation means nothing w.r.t the query and reference and is only used to pad w.r.t a third sequence
+* The `=` and `X` operations are usually redundant with `M`, since the information of matches/mismatches is not given by the alignment itself, but can be determined from the input sequences given the alignment.
+* Consecutive runs of the same operation is allowed, such as `1M1M`, but is better written `2M`
+
+This package provides the functions [`normalize`](@ref), [`normalize!`](@ref) and [`unsafe_normalize`](@ref) which creates new cigars written in the canonical form.
+In the canonical form, each of the points above are addressed: `H` is converted to `S`, `P` is removed, `=` and `X` is converted to `M`, and consecutive identical operations are merged.
+
+Note that the normalized form of a cigar corresponds to the _same_ pairwise alignment.
+Therefore, it is guaranteed that if `is_compatible(a, b)`, then `normalize(a) == normalize(b)` (though not the other way around).
+It is also guaranteed that the result of position translation is identical for a cigar and its normalized version.
 
 ## Errors and error recovery
 CIGARStrings.jl allows you to parse a poential CIGAR string without throwing an exception if the data is invalid, using the function [`CIGARStrings.try_parse`](@ref).

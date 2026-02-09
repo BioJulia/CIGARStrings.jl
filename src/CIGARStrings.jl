@@ -6,7 +6,8 @@ export CIGAR,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref, Translation, count_matches,
     BAMCIGAR, AbstractCIGAR, cigar_view!, ref, query, aln, pos_to_pos,
-    unsafe_switch_memory, is_compatible
+    unsafe_switch_memory, is_compatible,
+    normalize, unsafe_normalize, normalize!
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
     TranslationKind, PositionMapper
@@ -485,6 +486,114 @@ ERROR: DomainError
 """
 function count_matches end
 
+"""
+    normalize(cigar::T)::T where {T <: AbstractCIGAR}
+
+Create a new `AbstractCIGAR`, where the same alignment as `cigar`
+is written in its canonical form.
+
+The normalization process makes the following changes:
+* `OP_H` is converted to `OP_S`
+* `OP_Eq` and `OP_X` are converted to `OP_M`
+* `OP_P` operations are removed
+* Consecutive elements with the same operations are merged
+
+The resulting cigar therefore only contain the operations:
+`M`, `I`, `D`, `S`, `N`.
+
+If `is_compatible(a, b)`, and `a` and `b` are of the same type,
+then `normalize(a) == normalize(b)` is guaranteed, but not the other
+way around.
+
+Since a normalized cigar represents the same alignment, normalization
+will not affect position translation e.g. using [`pos_to_pos`](@ref).
+
+If the merging of two consecutive elements would result in a `CIGARElement`
+with a length of more than 268435455, throw a `CIGARError` with kind
+`Errors.IntegerOverflow`.
+
+See also: [`normalize!`](@ref), [`unsafe_normalize`](@ref), [`is_compatible`](@ref)
+
+# Examples
+```jldoctest
+julia> normalize(CIGAR("2H3=1X2=4P3=1=1I2X4H"))
+CIGAR("2S10M1I2M4S")
+
+julia> normalize(CIGAR("5M1D8M1I7M"))
+CIGAR("5M1D8M1I7M")
+```
+"""
+function normalize end
+
+"""
+    normalize!(cigar::T, mem::MutableMemoryView{UInt8})::T where {T <: AbstractCIGAR}
+
+Same as [`normalize`](@ref), but uses allocaiton of `mem` instead of allocating
+a new array.
+
+Throws a `BoundsError` if `mem` cannot hold the normalized cigar.
+A cigar after normalization is guaranteed to use at most as much memory
+as cigar before normalization, so if `length(mem) ≥ length(MemoryViews(cigar))`,
+a `BoundsError` cannot happen.
+
+!!! warning
+    If `mem` aliases `MemoryView(cigar)`,
+    this function may return garbage results.
+    Use [`unsafe_normalize`](@ref) to re-use the memory of a cigar
+    for the normalization result.
+
+See also: [`normalize`](@ref), [`unsafe_normalize`](@ref), [`is_compatible`](@ref)
+
+# Examples
+```jldoctest
+julia> c = CIGAR("1M2M1=2=3M");
+
+julia> mem = MemoryView([0x00, 0x00]);
+
+julia> c2 = normalize!(c, mem)
+CIGAR("9M")
+
+julia> MemoryView(c2) === ImmutableMemoryView(mem)
+true
+
+julia> c2 = normalize!(c, MemoryView([0x00]))
+ERROR: BoundsError:
+[...]
+```
+"""
+function normalize! end
+
+"""
+    unsafe_normalize(cigar::T)::T where {T <: AbstractCIGAR}
+
+Create a new normalized cigar, re-using the memory of the input `cigar`.
+The normalization process is the same as [`normalize`](@ref).
+
+!!! warning
+    Calling `unsafe_normalize` on a cigar will mutate its memory, even
+    though a `cigar` is constructed from an `ImmutableMemoryView`.
+    Callers must ensure that there are no other references to the memory
+    of `cigar` which assumes that the memory is immutable.
+    For example, calling this function on a `CIGAR` constructed from a
+    `String` risks undefined behaviour, since observing `String`s being
+    mutated is undefined behaviour in Julia.
+
+See also: [`normalize`](@ref), [`normalize!`](@ref), [`is_compatible`](@ref)
+
+# Examples
+```
+julia> c = CIGAR(collect(b"2H1X1=2H"));
+
+julia> mem = MemoryView(c);
+
+julia> c2 = unsafe_normalize(c)
+CIGAR("2S2M2S")
+
+julia> MemoryView(c2).ref === mem.ref
+true
+```
+"""
+function unsafe_normalize end
 
 """
     aln_identity(::AbstractCIGAR, mismatches::Int)::Float64
@@ -799,6 +908,8 @@ when determining if distinct CIGAR operations are equivalent:
 * An `OP_M` can encompass both `OP_X` and `OP_Eq`, ex: `3M` and `1X1M1=`
 * `OP_S` and `OP_H` are semantically identical, ex: `2S` and `2H` 
 * `OP_P` has no semantic meaning and is skipped: `1D1P2D1M3P` and `3D1M`
+
+See also: [`normalize`](@ref)
 
 # Examples:
 ```jldoctest
