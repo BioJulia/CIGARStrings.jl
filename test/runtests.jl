@@ -475,4 +475,127 @@ end
     end
 end
 
+@testset "Normalization" begin
+    make(::Type{CIGAR}, s) = CIGAR(s)
+    make(::Type{BAMCIGAR}, s) = BAMCIGAR(CIGAR(s))
+
+    @testset "Consecutive ops collapsed after conversion" for T in [CIGAR, BAMCIGAR]
+        # X, = and M all become M and merge together
+        @test normalize(make(T, "1X1=3P2M1X")) == make(T, "5M")
+
+        # Eq and X converted to M, merged with existing M
+        @test normalize(make(T, "1=1X1M")) == make(T, "3M")
+
+        # H at ends becomes S
+        @test normalize(make(T, "3H10M2H")) == make(T, "3S10M2S")
+
+        # Already normalized: unchanged
+        @test normalize(make(T, "5M1D8M1I7M")) == make(T, "5M1D8M1I7M")
+
+        # All P removed, empty result
+        @test normalize(make(T, "1P2P3P")) == make(T, "")
+
+        # Multiple consecutive same-op elements collapsed
+        @test normalize(make(T, "1M2M3M")) == make(T, "6M")
+        @test normalize(make(T, "1D1D1D")) == make(T, "3D")
+        @test normalize(make(T, "2I3I")) == make(T, "5I")
+
+        # P between different ops does not cause merge
+        @test normalize(make(T, "3M1P2I")) == make(T, "3M2I")
+
+        # N is not converted
+        @test normalize(make(T, "5M3N10M")) == make(T, "5M3N10M")
+
+        # Single element conversions
+        @test normalize(make(T, "5H")) == make(T, "5S")
+        @test normalize(make(T, "5=")) == make(T, "5M")
+        @test normalize(make(T, "5X")) == make(T, "5M")
+
+        # P at start before M-compatible op
+        @test normalize(make(T, "1P3M")) == make(T, "3M")
+        @test normalize(make(T, "1P2P3=")) == make(T, "3M")
+    end
+
+    @testset "Preserves alignment properties" for T in [CIGAR, BAMCIGAR]
+        for s in [
+                "1X1=3P2M1X",
+                "5H9S1D1D1D2I9S6H",
+                "1M2M1=2=3M",
+                "3H10M2H",
+            ]
+            c = make(T, s)
+            cn = normalize(c)
+            @test aln_length(cn) == aln_length(c)
+            @test ref_length(cn) == ref_length(c)
+            @test query_length(cn) == query_length(c)
+        end
+    end
+
+    @testset "Integer overflow on merge" for T in [CIGAR, BAMCIGAR]
+        # Merging 268435455 + 1 exceeds max element length (2^28 - 1)
+        c = make(T, "268435455M1=")
+        err = try
+            normalize(c)
+        catch e
+            e
+        end
+        @test err isa CIGARStrings.CIGARError
+        @test err.kind == Errors.IntegerOverflow
+
+        # Also overflows when both operands are large
+        c = make(T, "134217728M134217728=")
+        err = try
+            normalize(c)
+        catch e
+            e
+        end
+        @test err isa CIGARStrings.CIGARError
+        @test err.kind == Errors.IntegerOverflow
+
+        # Just at the boundary: should succeed
+        c = make(T, "268435454M1=")
+        cn = normalize(c)
+        @test cn == make(T, "268435455M")
+    end
+
+    # normalize! requires no more memory than the final output size.
+    @testset "normalize! memory requirement" for T in [CIGAR, BAMCIGAR]
+        # (input, expected normalized string, number of ops after normalization)
+        test_cases = [
+            ("1X1=3P2M1X", "5M", 1),
+            ("9M1=", "10M", 1), # merge causes digit growth
+            ("1M2M1=2=3M", "9M", 1),
+            ("3M1P2I", "3M2I", 2),
+        ]
+        for (input, expected_str, expected_n_ops) in test_cases
+            c = make(T, input)
+            needed = T === CIGAR ? sizeof(expected_str) : 4 * expected_n_ops
+
+            # Buffer of exactly the output size works
+            mem = MemoryView(zeros(UInt8, needed))
+            cn = normalize!(c, mem)
+            @test cn == make(T, expected_str)
+
+            # One byte less is too small
+            if needed > 0
+                mem_small = MemoryView(zeros(UInt8, needed - 1))
+                @test_throws BoundsError normalize!(c, mem_small)
+            end
+        end
+    end
+
+    @testset "unsafe_normalize" for T in [CIGAR, BAMCIGAR]
+        for (input, expected) in [
+                ("1X1=3P2M1X", "5M"),
+                ("5M1D8M1I7M", "5M1D8M1I7M"),
+                ("1P2P3P", ""),
+            ]
+            c = copy(make(T, input))
+            cn = unsafe_normalize(c)
+            @test cn == make(T, expected)
+            @test cn isa T
+        end
+    end
+end
+
 end # module CIGARTests

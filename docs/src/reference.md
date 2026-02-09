@@ -46,4 +46,7 @@ ref_to_query
 ref_to_aln
 aln_to_query
 aln_to_ref
+normalize
+normalize!
+unsafe_normalize
 ```

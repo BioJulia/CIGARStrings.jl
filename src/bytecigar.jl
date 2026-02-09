@@ -221,3 +221,108 @@ function count_matches(x::CIGAR, mismatches::Integer)::Int
     end
     return (n_Eq % Int) + (n_M - mismatches + n_X) % Int
 end
+
+# N.B: This function makes use of the iterator state of `cigar`
+function normalize!(cigar::CIGAR, mem::MutableMemoryView{UInt8})::CIGAR
+    state = 1
+    it = iterate(cigar, state)
+    # dummy value for type stability, initial value is not used
+    last_element = CIGARElement(unsafe, UInt32(0x00_00_00_10))
+
+    # When merging elements, we overwrite them. So, to overwrite at the right
+    # location, we begin writing at this location. Dummy value to begin with.
+    previous_element_write_offset = 0
+    n_ops = 0
+    write_offset = 0
+    source_mem = MemoryView(cigar)
+    while it !== nothing
+        (element, new_state) = it
+        if element.op === OP_P
+            state = new_state
+            it = iterate(cigar, state)
+            continue
+        end
+        op = if element.op === OP_H
+            OP_S
+        elseif element.op ∈ (OP_Eq, OP_X)
+            OP_M
+        else
+            element.op
+        end
+        shift = (reinterpret(UInt8, op) * 0x07) & 63
+        op_byte = ((CIGAR_BYTE_LUT >> shift) % UInt8) & 0x7f
+        if last_element.op == op && write_offset > 0
+            # Same operation, overwrite the previous one.
+            # Not applicable for the first operation
+            len = element.len + last_element.len
+            if len > 268435455
+                throw(CIGARError(state, Errors.IntegerOverflow))
+            end
+            len = len % UInt32
+
+            # Update last element
+            u = (len << 4) | reinterpret(UInt8, op)
+            last_element = CIGARElement(unsafe, u)
+
+            # Write digits, backwards, e.g. write "123" as "321".
+            # We write them backwards because that's easiest when using
+            # the divrem approach
+            n_digits = 0
+            write_offset = previous_element_write_offset
+            previous_element_write_offset = write_offset
+            while len > 0
+                n_digits += 1
+                (len, rm) = divrem(len, UInt32(10))
+                @boundscheck checkbounds(mem, write_offset + 1)
+                @inbounds mem[(write_offset += 1)] = rm % UInt8 + 0x30
+            end
+            # Now, reverse digits in-place
+            @inbounds for j in 1:(n_digits >> 1)
+                a = write_offset - j + 1
+                b = write_offset - n_digits + j
+                (mem[a], mem[b]) = (mem[b], mem[a])
+            end
+            # Now write the operation itself
+            @boundscheck checkbounds(mem, write_offset + 1)
+            @inbounds mem[(write_offset += 1)] = op_byte
+        else
+            previous_element_write_offset = write_offset
+            # New operation, so we simply copy the memory of the source to `mem`
+            n_bytes = new_state - state
+            @boundscheck if length(mem) < write_offset + n_bytes
+                throw(BoundsError(mem, write_offset + n_bytes))
+            end
+            # Copy over digits
+            @inbounds for i in state:(new_state - 2)
+                mem[(write_offset += 1)] = source_mem[i]
+            end
+            # Copy over new op
+            @inbounds mem[(write_offset += 1)] = op_byte
+
+            n_ops += 1
+
+            # Update last element
+            u = (getfield(element, :x) & 0xff_ff_ff_f0) | reinterpret(UInt8, op)
+            last_element = CIGARElement(unsafe, u)
+        end
+        state = new_state
+        it = iterate(cigar, state)
+    end
+    mem = @inbounds ImmutableMemoryView(mem)[1:write_offset]
+    return CIGAR(unsafe, mem, n_ops % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
+
+function normalize(cigar::CIGAR)
+    return @inbounds @inline normalize!(cigar, similar(MemoryView(cigar)))
+end
+
+function unsafe_normalize(cigar::CIGAR)
+    mem = MemoryView(cigar)
+    newmem = MemoryViews.unsafe_from_parts(mem.ref, length(mem))
+    # This works even though the input and output arrays alias, because
+    # they alias with the same offset. Since the normalization process happens
+    # in a single pass over the input array, and it is never the case that
+    # normalization writes to higher indices than it reads from, we never read
+    # any data that has been modified in the normalization process.
+    return @inbounds @inline normalize!(cigar, newmem)
+end
