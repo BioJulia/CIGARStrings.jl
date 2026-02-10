@@ -7,7 +7,8 @@ export CIGAR,
     aln_to_query, aln_to_ref, Translation, count_matches,
     BAMCIGAR, AbstractCIGAR, cigar_view!, ref, query, aln, pos_to_pos,
     unsafe_switch_memory, is_compatible,
-    normalize, unsafe_normalize, normalize!
+    normalize, unsafe_normalize, normalize!,
+    encode!, encode_append!
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
     TranslationKind, PositionMapper
@@ -267,6 +268,166 @@ Base.eltype(::Type{<:AbstractCIGAR}) = CIGARElement
 
 include("bytecigar.jl")
 include("bamcigar.jl")
+
+"""
+    encode!(
+            mem::MutableMemoryView{UInt8},
+            ::Type{T <: AbstractCIGAR},
+            cigar::AbstractCIGAR
+        )::T
+
+Encode `cigar` as type `T` into the beginning of `mem`,
+and return the result as a new `T` backed by `mem`.
+
+Throw a `BoundsError` if `mem` is too short to contain the whole encoding.
+
+!!! warning
+    Since the first bytes of `mem` are used to back the newly created cigar,
+    mutating `mem` after this function is being called will invalidate
+    the created cigar.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3S5M1D19X2I6M3H");
+
+julia> mem = MemoryView(zeros(UInt8, 60));
+
+julia> bc = encode!(mem, BAMCIGAR, c)
+BAMCIGAR(CIGAR("3S5M1D19X2I6M3H"))
+
+julia> n_bytes = length(MemoryView(bc));
+
+julia> ImmutableMemoryView(mem)[1:n_bytes] === MemoryView(bc)
+true
+```
+"""
+function encode!(mem::MutableMemoryView{UInt8}, ::Type{BAMCIGAR}, cigar::BAMCIGAR)
+    src_mem = MemoryView(cigar)
+    @boundscheck checkbounds(mem, eachindex(src_mem))
+    @inbounds copyto!(mem, src_mem)
+    dst = @inbounds ImmutableMemoryView(mem)[eachindex(src_mem)]
+    return BAMCIGAR(unsafe, dst, cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
+
+function encode!(mem::MutableMemoryView{UInt8}, ::Type{CIGAR}, cigar::CIGAR)
+    src_mem = MemoryView(cigar)
+    @boundscheck checkbounds(mem, eachindex(src_mem))
+    @inbounds copyto!(mem, src_mem)
+    dst = @inbounds ImmutableMemoryView(mem)[eachindex(src_mem)]
+    return CIGAR(unsafe, dst, cigar.n_ops, cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
+
+function encode!(mem::MutableMemoryView{UInt8}, ::Type{BAMCIGAR}, cigar::CIGAR)
+    nbytes = 4 * length(cigar)
+    @boundscheck checkbounds(mem, 1:nbytes)
+    mem = @inbounds mem[1:nbytes]
+    GC.@preserve mem begin
+        ptr = Ptr{UInt32}(pointer(mem))
+        for element in cigar
+            u = htol(getfield(element, :x))
+            unsafe_store!(ptr, u)
+            ptr += 4
+        end
+    end
+    return BAMCIGAR(unsafe, ImmutableMemoryView(mem), cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
+
+function encode!(mem::MutableMemoryView{UInt8}, ::Type{CIGAR}, cigar::BAMCIGAR)
+    len = 0
+    for element in cigar
+        n = element.len % UInt32
+        n_digits = 0
+        while !iszero(n)
+            (n, r) = divrem(n, UInt32(10))
+            mem[len += 1] = r + 0x30
+            n_digits += 1
+        end
+        if n_digits > 1
+            @inbounds for digit in 1:(n_digits >>> 1)
+                a = len - n_digits + digit
+                b = len - digit + 1
+                mem[a], mem[b] = mem[b], mem[a]
+            end
+        end
+        shift = (7 * (getfield(element, :x) & 0x0f)) & 63
+        byte = ((CIGAR_BYTE_LUT >> shift) % UInt8) & 0x7f
+        mem[len += 1] = byte
+    end
+    result_mem = @inbounds ImmutableMemoryView(mem)[1:len]
+    return CIGAR(unsafe, result_mem, length(cigar) % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
+
+"""
+    encode_append!(
+            v::Vector{UInt8},
+            ::Type{T <: AbstractCIGAR},
+            cigar::AbstractCIGAR
+        )::T
+
+Encode `cigar` as type `T` by appending its representation to `v`,
+and return the result as a new `T` backed by `v`'s memory.
+
+!!! warning
+    Since the returned cigar will use `v` as backing memory,
+    mutating `v` after this function has been called will invalidate
+    the created cigar.
+
+# Examples
+```jldoctest
+julia> c = CIGAR("3S5M1D19X2I6M3H");
+
+julia> v = UInt8[1, 2, 3, 4];
+
+julia> bc = encode_append!(v, BAMCIGAR, c)
+BAMCIGAR(CIGAR("3S5M1D19X2I6M3H"))
+
+julia> v[1:4] == 1:4 # unchanged
+true
+
+julia> MemoryView(bc) === ImmutableMemoryView(v)[5:end]
+true
+```
+"""
+function encode_append!(v::Vector{UInt8}, ::Type{T}, cigar::T) where {T <: Union{CIGAR, BAMCIGAR}}
+    src_mem = MemoryView(cigar)
+    old_len = length(v)
+    resize!(v, old_len + length(src_mem))
+    dst_mem = @inbounds MemoryView(v)[(old_len + 1):end]
+    return @inbounds encode!(dst_mem, T, cigar)
+end
+
+function encode_append!(v::Vector{UInt8}, ::Type{BAMCIGAR}, cigar::CIGAR)
+    old_len = length(v)
+    resize!(v, old_len + 4 * length(cigar))
+    dst_mem = @inbounds MemoryView(v)[(old_len + 1):end]
+    return @inbounds encode!(dst_mem, BAMCIGAR, cigar)
+end
+
+function encode_append!(v::Vector{UInt8}, ::Type{CIGAR}, cigar::BAMCIGAR)
+    old_len = length(v)
+    sizehint!(v, old_len + 2 * length(cigar); shrink = false)
+    for element in cigar
+        n = element.len % UInt32
+        n_digits = 0
+        while !iszero(n)
+            (n, r) = divrem(n, UInt32(10))
+            push!(v, r + 0x30)
+            n_digits += 1
+        end
+        if n_digits > 1
+            len = length(v)
+            @inbounds for digit in 1:(n_digits >>> 1)
+                a = len - n_digits + digit
+                b = len - digit + 1
+                v[a], v[b] = v[b], v[a]
+            end
+        end
+        shift = (7 * (getfield(element, :x) & 0x0f)) & 63
+        push!(v, ((CIGAR_BYTE_LUT >> shift) % UInt8) & 0x7f)
+    end
+    result_mem = @inbounds ImmutableMemoryView(v)[(old_len + 1):end]
+    return CIGAR(unsafe, result_mem, length(cigar) % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
 
 const CONSUMES = let
     x = UInt32(0)
@@ -528,12 +689,12 @@ function normalize end
 """
     normalize!(cigar::T, mem::MutableMemoryView{UInt8})::T where {T <: AbstractCIGAR}
 
-Same as [`normalize`](@ref), but uses allocaiton of `mem` instead of allocating
+Same as [`normalize`](@ref), but uses allocation of `mem` instead of allocating
 a new array.
 
 Throws a `BoundsError` if `mem` cannot hold the normalized cigar.
 A cigar after normalization is guaranteed to use at most as much memory
-as cigar before normalization, so if `length(mem) ≥ length(MemoryViews(cigar))`,
+as cigar before normalization, so if `length(mem) ≥ length(MemoryView(cigar))`,
 a `BoundsError` cannot happen.
 
 !!! warning

@@ -6,16 +6,16 @@ This file provides guidance to AI agents when working with code in this reposito
 
 ```bash
 # Run all tests
-JULIA_TEST_FAILFAST=true julia --project -e 'using Pkg; Pkg.test()'
+JULIA_TEST_FAILFAST=true julia --project=. --startup=no -e 'using Pkg; Pkg.test()'
 
 # Run tests with specific test file
-JULIA_TEST_FAILFAST=true julia --project test/runtests.jl
+JULIA_TEST_FAILFAST=true julia --project=. --startup=no test/runtests.jl
 
 # Run Julia REPL with project activated
-julia --project
+julia --project --startup=no
 
 # Generate documentation locally
-julia --project=docs docs/make.jl
+julia --project=docs --startup=no docs/make.jl
 ```
 
 ## Architecture
