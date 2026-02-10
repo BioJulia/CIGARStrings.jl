@@ -365,6 +365,13 @@ end
         @test m == v
         @test String(m) == string(CIGAR(c))
     end
+
+    @testset "BAMCIGAR actually creates BAMCIGAR" begin
+        c = CIGAR("1S5M1D3M2S")
+        c2 = BAMCIGAR(c)
+        @test c2 isa BAMCIGAR
+        @test c2 == c
+    end
 end
 
 # TODO: More equality tests
@@ -595,6 +602,88 @@ end
             @test cn == make(T, expected)
             @test cn isa T
         end
+    end
+end
+
+@testset "encode! and encode_append!" begin
+    cigars = [
+        CIGAR(""),
+        CIGAR("3S5M1D19X2I6M3H"),
+        CIGAR("150M"),
+        CIGAR("5H9S1D1D1D2I9S6H"),
+    ]
+
+    @testset "encode!" begin
+        for c in cigars, T in [CIGAR, BAMCIGAR]
+            for src in [c, BAMCIGAR(c)]
+                mem = MemoryView(zeros(UInt8, 256))
+                result = encode!(mem, T, src)
+                @test result isa T
+                @test result == src
+                # Result memory is a prefix slice of mem
+                nbytes = length(MemoryView(result))
+                if nbytes > 0
+                    @test MemoryView(result) === ImmutableMemoryView(mem)[1:nbytes]
+                end
+            end
+        end
+
+        # BoundsError with exactly one byte too little
+        for s in ["10M5D3I", "150M", "5H9S1D1D1D2I9S6H"]
+            c = CIGAR(s)
+            bc = BAMCIGAR(c)
+            for (T, src) in [(CIGAR, c), (BAMCIGAR, c), (CIGAR, bc), (BAMCIGAR, bc)]
+                # First encode with large buffer to find exact size needed
+                big = MemoryView(zeros(UInt8, 256))
+                needed = length(MemoryView(encode!(big, T, src)))
+                needed == 0 && continue
+                # One byte too few
+                too_small = MemoryView(zeros(UInt8, needed - 1))
+                @test_throws BoundsError encode!(too_small, T, src)
+                # Exact size works
+                exact = MemoryView(zeros(UInt8, needed))
+                result = encode!(exact, T, src)
+                @test result == src
+                @test MemoryView(result) === ImmutableMemoryView(exact)
+            end
+        end
+    end
+
+    @testset "encode_append!" begin
+        for c in cigars, T in [CIGAR, BAMCIGAR]
+            for src in [c, BAMCIGAR(c)]
+                prefix = UInt8[0xaa, 0xbb, 0xcc]
+                v = copy(prefix)
+                result = encode_append!(v, T, src)
+                @test result isa T
+                @test result == src
+                # Prefix bytes are preserved
+                @test v[1:3] == prefix
+                # Result is backed by the appended portion of v
+                if !isempty(MemoryView(result))
+                    @test MemoryView(result) === ImmutableMemoryView(v)[4:end]
+                end
+            end
+        end
+
+        # Appending to empty vector
+        for (T, src) in [(BAMCIGAR, CIGAR("5M")), (CIGAR, BAMCIGAR(CIGAR("5M")))]
+            v = UInt8[]
+            result = encode_append!(v, T, src)
+            @test result isa T
+            @test result == src
+            @test MemoryView(result) === ImmutableMemoryView(v)
+        end
+
+        # Multiple appends to the same vector
+        c1 = CIGAR("10M")
+        c2 = CIGAR("3S5M2I")
+        v = UInt8[]
+        r1 = encode_append!(v, BAMCIGAR, c1)
+        r2 = encode_append!(v, BAMCIGAR, c2)
+        @test r1 == c1
+        @test r2 == c2
+        @test length(v) == length(MemoryView(r1)) + length(MemoryView(r2))
     end
 end
 

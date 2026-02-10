@@ -74,22 +74,17 @@ end
     end
 end
 
-CIGAR(x::BAMCIGAR) = CIGAR(x, UInt8[])
-function CIGAR(x::BAMCIGAR, v::Vector{UInt8})
-    return CIGAR(
-        unsafe,
-        cigar_view!(v, x),
-        length(x) % UInt32,
-        x.aln_len,
-        x.ref_len,
-        x.query_len,
-    )
-end
+CIGAR(x::BAMCIGAR) = encode_append!(UInt8[], CIGAR, x)
+
+@deprecate CIGAR(x::BAMCIGAR, v::Vector{UInt8}) encode_append!(empty!(v), CIGAR, x)
 
 MemoryViews.MemoryView(x::BAMCIGAR) = x.mem
 
 """
     cigar_view!(v::Vector{UInt8}, x::BAMCIGAR)::ImmutableMemoryView{UInt8}
+
+!!! warning
+    This function is DEPRECATED in favor of `encode_append!`
 
 Write the ASCII (i.e. `CIGAR`) representation `x` into `v`,
 emptying `v`'s original content.
@@ -110,41 +105,19 @@ julia> String(mem_view) == string(CIGAR(bc))
 true
 ```
 """
-function cigar_view!(v::Vector{UInt8}, x::BAMCIGAR)
-    # Sizehint to minimum size to reduce further reallocations
-    sizehint!(v, 2 * length(x); shrink=false)
-    empty!(v)
-    for element in x
-        n = element.len % UInt32
-        n_digits = 0
-        while !iszero(n)
-            (n, r) = divrem(n, UInt32(10))
-            push!(v, r + 0x30)
-            n_digits += 1
-        end
-        if n_digits > 1
-            @inbounds for i in 1:(n_digits >>> 1)
-                a = lastindex(v) - i + 1
-                b = lastindex(v) - n_digits + i
-                v[a], v[b] = v[b], v[a]
-            end
-        end
-        shift = (7 * (getfield(element, :x) & 0x0f)) & 63
-        byte = ((CIGAR_BYTE_LUT >> shift) % UInt8) & 0x7f
-        push!(v, byte)
-    end
-    return ImmutableMemoryView(v)
-end
+function cigar_view! end
 
-BAMCIGAR(x::CIGAR) = BAMCIGAR(x, UInt8[])
+@deprecate cigar_view!(v::Vector{UInt8}, x::BAMCIGAR) MemoryView(encode_append!(empty!(v), CIGAR, x))
 
-function BAMCIGAR(x::CIGAR, v::Vector{UInt8})
-    resize!(v, 4 * length(x))
-    return @inbounds BAMCIGAR(MemoryView(v), x)
-end
+BAMCIGAR(x::CIGAR) = encode_append!(UInt8[], BAMCIGAR, x)
+
+@deprecate BAMCIGAR(x::CIGAR, v::Vector{UInt8}) encode_append!(empty!(v), BAMCIGAR, x)
 
 """
     BAMCIGAR(mem::MutableMemoryView{UInt8}, x::CIGAR)::BAMCIGAR
+
+!!! warning
+    This function is DEPRECATED. Use `encode!(mem, BAMCIGAR, x)`
 
 Construct a `BAMCIGAR` equal to `x`, using the memory `mem`.
 After calling this, `mem` may not be mutated, and is considered
@@ -165,30 +138,16 @@ julia> parent(MemoryView(cigar)) === parent(mem)
 true
 ```
 """
-function BAMCIGAR(mem::MutableMemoryView{UInt8}, x::CIGAR)
-    @boundscheck if length(mem) < 4 * length(x)
-        throw(BoundsError(mem, 4 * length(x)))
-    end
-    mem = @inbounds mem[1:(4 * length(x))]
-    i = 1
-    for element in x
-        u = getfield(element, :x)
-        for _ in 1:4
-            @inbounds mem[i] = u % UInt8
-            i += 1
-            u >>= 8
-        end
-    end
-    return BAMCIGAR(
-        unsafe,
-        ImmutableMemoryView(mem),
-        x.aln_len,
-        x.ref_len,
-        x.query_len
-    )
-end
+BAMCIGAR(::MutableMemoryView{UInt8}, ::CIGAR)
 
-Base.print(io::IO, x::BAMCIGAR) = (write(io, cigar_view!(UInt8[], x)); nothing)
+@deprecate BAMCIGAR(mem::MutableMemoryView{UInt8}, x::CIGAR) encode!(mem, BAMCIGAR, x)
+
+function Base.print(io::IO, x::BAMCIGAR)
+    v = UInt8[]
+    encode_append!(v, CIGAR, x)
+    write(io, v)
+    return nothing
+end
 
 function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
     mem = ImmutableMemoryView(x)::ImmutableMemoryView{UInt8}

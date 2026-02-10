@@ -22,6 +22,8 @@ CIGARStrings.try_parse
 
 ```@docs
 unsafe_switch_memory
+encode!
+encode_append!
 OP_M
 OP_I
 OP_D
