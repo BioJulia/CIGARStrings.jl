@@ -5,7 +5,7 @@ export CIGAR,
     CIGARElement, ref_length, aln_length, query_length, aln_identity,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref, Translation, count_matches,
-    BAMCIGAR, AbstractCIGAR, cigar_view!, ref, query, aln, pos_to_pos,
+    BAMCIGAR, AbstractCIGAR, ref, query, aln, pos_to_pos,
     unsafe_switch_memory, is_compatible,
     normalize, unsafe_normalize, normalize!,
     encode!, encode_append!
