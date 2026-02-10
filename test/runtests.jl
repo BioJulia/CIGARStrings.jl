@@ -357,14 +357,6 @@ end
         end
     end
 
-    @testset "cigar_view" begin
-        v = UInt8[]
-        c = CIGAR("15M1D19S9H")
-        m = cigar_view!(v, BAMCIGAR(c))
-        @test m isa ImmutableMemoryView{UInt8}
-        @test m == v
-        @test String(m) == string(CIGAR(c))
-    end
 
     @testset "BAMCIGAR actually creates BAMCIGAR" begin
         c = CIGAR("1S5M1D3M2S")

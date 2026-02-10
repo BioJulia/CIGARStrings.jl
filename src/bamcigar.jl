@@ -76,71 +76,10 @@ end
 
 CIGAR(x::BAMCIGAR) = encode_append!(UInt8[], CIGAR, x)
 
-@deprecate CIGAR(x::BAMCIGAR, v::Vector{UInt8}) encode_append!(empty!(v), CIGAR, x)
 
 MemoryViews.MemoryView(x::BAMCIGAR) = x.mem
 
-"""
-    cigar_view!(v::Vector{UInt8}, x::BAMCIGAR)::ImmutableMemoryView{UInt8}
-
-!!! warning
-    This function is DEPRECATED in favor of `encode_append!`
-
-Write the ASCII (i.e. `CIGAR`) representation `x` into `v`,
-emptying `v`'s original content.
-A memory view of `v` is returned:
-
-# Examples
-```jldoctest
-julia> v = [0x01, 0x02, 0x03];
-
-julia> bc = BAMCIGAR(CIGAR("151M3D20M"));
-
-julia> mem_view = cigar_view!(v, bc);
-
-julia> mem_view == v
-true
-
-julia> String(mem_view) == string(CIGAR(bc))
-true
-```
-"""
-function cigar_view! end
-
-@deprecate cigar_view!(v::Vector{UInt8}, x::BAMCIGAR) MemoryView(encode_append!(empty!(v), CIGAR, x))
-
 BAMCIGAR(x::CIGAR) = encode_append!(UInt8[], BAMCIGAR, x)
-
-@deprecate BAMCIGAR(x::CIGAR, v::Vector{UInt8}) encode_append!(empty!(v), BAMCIGAR, x)
-
-"""
-    BAMCIGAR(mem::MutableMemoryView{UInt8}, x::CIGAR)::BAMCIGAR
-
-!!! warning
-    This function is DEPRECATED. Use `encode!(mem, BAMCIGAR, x)`
-
-Construct a `BAMCIGAR` equal to `x`, using the memory `mem`.
-After calling this, `mem` may not be mutated, and is considered
-owned by the resulting `BAMCIGAR`.
-
-Throw a `BoundsError` if `length(mem) < 4 * length(x)`.
-
-# Examples
-```jldoctest
-julia> x = CIGAR("150M3D9S");
-
-julia> mem = MemoryView(zeros(UInt8, 15));
-
-julia> cigar = BAMCIGAR(mem, x)
-BAMCIGAR(CIGAR("150M3D9S"))
-
-julia> parent(MemoryView(cigar)) === parent(mem)
-true
-```
-"""
-BAMCIGAR(::MutableMemoryView{UInt8}, ::CIGAR)
-
-@deprecate BAMCIGAR(mem::MutableMemoryView{UInt8}, x::CIGAR) encode!(mem, BAMCIGAR, x)
 
 function Base.print(io::IO, x::BAMCIGAR)
     v = UInt8[]

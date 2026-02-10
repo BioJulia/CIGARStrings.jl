@@ -48,3 +48,6 @@ CIGARStrings.jl provides types for representing CIGAR strings (Concise Idiosyncr
 ### Coordinate Systems
 
 Three coordinate systems: `query`, `ref`, `aln` (alignment with gaps). Position functions like `query_to_ref`, `ref_to_aln` etc. translate between them, returning `Translation` objects with `.kind` (outside/pos/gap) and `.pos`.
+
+### When committing
+Do not add yourself (you, the agent) as a co-author.
