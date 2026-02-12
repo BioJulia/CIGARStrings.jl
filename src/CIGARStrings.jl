@@ -58,7 +58,7 @@ Exception kind thrown by the package CIGARStrings.
 and `.index`, returning an `Int`, pointing to the approximate byte index where the
 exception was encountered.
 
-The `kind` and `pos` are stable API, in the sense that e.g. an integer overflow
+The `kind` and `index` are stable API, in the sense that e.g. an integer overflow
 at position 55 will always be represented by a
 `CIGARError(55, CIGARStrings.Errors.IntegerOverflow)`.
 However, the same invalid CIGAR string may produce multiple different errors, and which
@@ -905,7 +905,7 @@ n_symbols(::Ref, x::AbstractCIGAR) = ref_length(x)
 n_symbols(::Aln, x::AbstractCIGAR) = aln_length(x)
 
 """
-    pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, pos::Integer)::Integer
+    pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, pos::Integer)::Translation
 
 Similar to the generic `pos_to_pos`, but returns the resulting integer immediately instead of returning
 a lazy iterator.

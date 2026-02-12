@@ -39,6 +39,22 @@ using MemoryViews
         @test CIGARStrings.try_parse(CIGAR, bad).kind == err
     end
 
+    @testset "try_parse catches total length overflow" begin
+        maxop = "268435455"
+
+        # Ref length overflows UInt32 while aln length stays tiny.
+        ref_overflow = repeat(maxop * "N", 17) * "1M"
+        err = CIGARStrings.try_parse(CIGAR, ref_overflow)
+        @test err isa CIGARStrings.CIGARError
+        @test err.kind == Errors.IntegerOverflow
+
+        # Query length overflows UInt32 while aln length is still <= UInt32 max.
+        query_overflow = maxop * "S" * repeat(maxop * "I", 14) * "16I" * maxop * "S"
+        err = CIGARStrings.try_parse(CIGAR, query_overflow)
+        @test err isa CIGARStrings.CIGARError
+        @test err.kind == Errors.IntegerOverflow
+    end
+
     @testset "unsafe_switch_memory" begin
         for str in [
                 "",
@@ -333,6 +349,38 @@ end
                 ("\x10\0\0\0\x14\0\0\0\x10\0\0\0", Errors.InvalidSoftClip),
             ]
             @test CIGARStrings.try_parse(BAMCIGAR, bad).kind == err
+        end
+
+        @testset "try_parse catches total length overflow" begin
+            n = UInt32(268435455)
+            push_u32le!(v::Vector{UInt8}, x::UInt32) = append!(v, reinterpret(UInt8, [htol(x)]))
+
+            # Ref length overflows UInt32 while aln length stays tiny.
+            ref_bytes = UInt8[]
+            op_n = (n << 4) | UInt32(0x03)
+            op_m = (UInt32(1) << 4) | UInt32(0x00)
+            for _ in 1:17
+                push_u32le!(ref_bytes, op_n)
+            end
+            push_u32le!(ref_bytes, op_m)
+            err = CIGARStrings.try_parse(BAMCIGAR, ref_bytes)
+            @test err isa CIGARStrings.CIGARError
+            @test err.kind == Errors.IntegerOverflow
+
+            # Query length overflows UInt32 while aln length is still <= UInt32 max.
+            query_bytes = UInt8[]
+            op_s = (n << 4) | UInt32(0x04)
+            op_i = (n << 4) | UInt32(0x01)
+            op_i16 = (UInt32(16) << 4) | UInt32(0x01)
+            push_u32le!(query_bytes, op_s)
+            for _ in 1:14
+                push_u32le!(query_bytes, op_i)
+            end
+            push_u32le!(query_bytes, op_i16)
+            push_u32le!(query_bytes, op_s)
+            err = CIGARStrings.try_parse(BAMCIGAR, query_bytes)
+            @test err isa CIGARStrings.CIGARError
+            @test err.kind == Errors.IntegerOverflow
         end
     end
 

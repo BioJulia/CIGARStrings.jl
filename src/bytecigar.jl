@@ -153,7 +153,9 @@ function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
         end
     end
     last_was_num && return CIGARError(lastindex(mem), Errors.Truncated)
-    max(aln_len, n_ops) > typemax(UInt32) && return CIGARError(lastindex(mem), Errors.IntegerOverflow)
+    if max(aln_len, n_ops, ref_len, query_len) > typemax(UInt32)
+        return CIGARError(lastindex(mem), Errors.IntegerOverflow)
+    end
     return CIGAR(unsafe, mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
 end
 
