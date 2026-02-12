@@ -200,14 +200,14 @@ end
     #       1234    5678 9 012    3
     # R XXXXXXXX----XXXX-X-XXX----XXXX
     # Q HHSS|||......--|.|.-||.....SSS
-    #   1234567890123  4567 8901234567
+    #     12345678901  2345 6789012345
     # A     12345678901234567890123
     s = "2H2S4M4I1X2D1=1I1M1I1D2M4I1X3S"
     for c in [CIGAR(s), BAMCIGAR(CIGAR(s))]
 
         # Getting properties of Translation object
         t = query_to_aln(c, 12)
-        @test t.pos == 8
+        @test t.pos == 12
         @test t.kind == CIGARStrings.pos
 
         t = pos(9)
@@ -226,71 +226,71 @@ end
         @test is_outside(aln_to_query(c, 0))
         @test is_outside(aln_to_ref(c, 0))
         @test is_outside(query_to_aln(c, 1))
-        @test is_outside(query_to_aln(c, 4))
+        @test is_outside(query_to_aln(c, 2))
         @test is_outside(query_to_ref(c, 1))
-        @test is_outside(query_to_ref(c, 4))
+        @test is_outside(query_to_ref(c, 2))
 
         # After alignment
-        @test is_outside(query_to_ref(c, 25))
-        @test is_outside(query_to_aln(c, 25))
+        @test is_outside(query_to_ref(c, 23))
+        @test is_outside(query_to_aln(c, 23))
         @test is_outside(aln_to_query(c, 24))
         @test is_outside(aln_to_ref(c, 24))
         @test is_outside(ref_to_query(c, 14))
         @test is_outside(ref_to_aln(c, 14))
 
         # Within alignment
-        @test query_to_ref(c, 5) == pos(1)
-        @test query_to_aln(c, 5) == pos(1)
-        @test ref_to_query(c, 1) == pos(5)
+        @test query_to_ref(c, 3) == pos(1)
+        @test query_to_aln(c, 3) == pos(1)
+        @test ref_to_query(c, 1) == pos(3)
         @test ref_to_aln(c, 1) == pos(1)
-        @test aln_to_query(c, 1) == pos(5)
+        @test aln_to_query(c, 1) == pos(3)
         @test aln_to_ref(c, 1) == pos(1)
 
         # Various
-        @test query_to_ref(c, 7) == pos(3)
-        @test query_to_ref(c, 8) == pos(4)
+        @test query_to_ref(c, 7) == gap(4)
+        @test query_to_ref(c, 8) == gap(4)
         @test query_to_ref(c, 9) == gap(4)
-        @test query_to_ref(c, 12) == gap(4)
-        @test query_to_ref(c, 13) == pos(5)
-        @test query_to_ref(c, 14) == pos(8)
-        @test query_to_ref(c, 15) == gap(8)
-        @test query_to_ref(c, 16) == pos(9)
-        @test query_to_ref(c, 17) == gap(9)
-        @test query_to_ref(c, 18) == pos(11)
-        @test query_to_ref(c, 19) == pos(12)
+        @test query_to_ref(c, 12) == pos(8)
+        @test query_to_ref(c, 13) == gap(8)
+        @test query_to_ref(c, 14) == pos(9)
+        @test query_to_ref(c, 15) == gap(9)
+        @test query_to_ref(c, 16) == pos(11)
+        @test query_to_ref(c, 17) == pos(12)
+        @test query_to_ref(c, 18) == gap(12)
+        @test query_to_ref(c, 19) == gap(12)
         @test query_to_ref(c, 20) == gap(12)
-        @test query_to_ref(c, 23) == gap(12)
-        @test query_to_ref(c, 24) == pos(13)
+        @test query_to_ref(c, 22) == pos(13)
+        @test is_outside(query_to_ref(c, 23))
 
-        @test query_to_aln(c, 9) == pos(5)
-        @test query_to_aln(c, 13) == pos(9)
-        @test query_to_aln(c, 14) == pos(12)
-        @test query_to_aln(c, 17) == pos(15)
-        @test query_to_aln(c, 18) == pos(17)
-        @test query_to_aln(c, 19) == pos(18)
-        @test query_to_aln(c, 24) == pos(23)
+        @test query_to_aln(c, 9) == pos(7)
+        @test query_to_aln(c, 13) == pos(13)
+        @test query_to_aln(c, 14) == pos(14)
+        @test query_to_aln(c, 17) == pos(18)
+        @test query_to_aln(c, 18) == pos(19)
+        @test query_to_aln(c, 19) == pos(20)
+        @test query_to_aln(c, 22) == pos(23)
 
-        @test aln_to_query(c, 9) == pos(13)
-        @test aln_to_query(c, 10) == gap(13)
-        @test aln_to_query(c, 11) == gap(13)
-        @test aln_to_query(c, 12) == pos(14)
-        @test aln_to_query(c, 13) == pos(15)
-        @test aln_to_query(c, 14) == pos(16)
-        @test aln_to_query(c, 15) == pos(17)
-        @test aln_to_query(c, 16) == gap(17)
-        @test aln_to_query(c, 17) == pos(18)
-        @test aln_to_query(c, 18) == pos(19)
-        @test aln_to_query(c, 19) == pos(20)
-        @test aln_to_query(c, 23) == pos(24)
+        @test aln_to_query(c, 9) == pos(11)
+        @test aln_to_query(c, 10) == gap(11)
+        @test aln_to_query(c, 11) == gap(11)
+        @test aln_to_query(c, 12) == pos(12)
+        @test aln_to_query(c, 13) == pos(13)
+        @test aln_to_query(c, 14) == pos(14)
+        @test aln_to_query(c, 15) == pos(15)
+        @test aln_to_query(c, 16) == gap(15)
+        @test aln_to_query(c, 17) == pos(16)
+        @test aln_to_query(c, 18) == pos(17)
+        @test aln_to_query(c, 19) == pos(18)
+        @test aln_to_query(c, 23) == pos(22)
 
-        @test ref_to_query(c, 5) == pos(13)
-        @test ref_to_query(c, 6) == gap(13)
-        @test ref_to_query(c, 7) == gap(13)
-        @test ref_to_query(c, 8) == pos(14)
-        @test ref_to_query(c, 9) == pos(16)
-        @test ref_to_query(c, 10) == gap(17)
-        @test ref_to_query(c, 11) == pos(18)
-        @test ref_to_query(c, 13) == pos(24)
+        @test ref_to_query(c, 5) == pos(11)
+        @test ref_to_query(c, 6) == gap(11)
+        @test ref_to_query(c, 7) == gap(11)
+        @test ref_to_query(c, 8) == pos(12)
+        @test ref_to_query(c, 9) == pos(14)
+        @test ref_to_query(c, 10) == gap(15)
+        @test ref_to_query(c, 11) == pos(16)
+        @test ref_to_query(c, 13) == pos(22)
 
         @test ref_to_aln(c, 1) == pos(1)
         @test ref_to_aln(c, 4) == pos(4)
@@ -441,21 +441,18 @@ end
         @test is_compatible(CIGAR("5M"), CIGAR("5X"))
         @test is_compatible(CIGAR("10M"), CIGAR("3=4X3="))
 
-        # OP_S and OP_H are semantically identical
-        @test is_compatible(CIGAR("2S"), CIGAR("2H"))
-        @test is_compatible(CIGAR("3H5M2S"), CIGAR("3S5M2H"))
-        @test is_compatible(CIGAR("1H1S"), CIGAR("2H"))
-        @test is_compatible(CIGAR("1S1H"), CIGAR("2S"))
-
-        # OP_P has no semantic meaning and is skipped
+        # OP_P and OP_H has no semantic meaning and is skipped
         @test is_compatible(CIGAR("1D1P2D1M3P"), CIGAR("3D1M"))
         @test is_compatible(CIGAR("5P"), CIGAR(""))
         @test is_compatible(CIGAR("1P1P1P"), CIGAR(""))
         @test is_compatible(CIGAR("2M1P3M"), CIGAR("2M3M"))
         @test is_compatible(CIGAR("1P2M1P3I1P"), CIGAR("2M3I"))
+        @test is_compatible(CIGAR("3H5M"), CIGAR("3=2X"))
+        @test is_compatible(CIGAR("3H5M2H"), CIGAR("3=2X"))
+        @test is_compatible(CIGAR("5M2H"), CIGAR("2=3X"))
 
         # Complex combinations
-        @test is_compatible(CIGAR("1H1S3M1P2I"), CIGAR("2S1=2M2I"))
+        @test is_compatible(CIGAR("1H1S3M1P2I"), CIGAR("1S1=2M2I"))
 
         # Incompatible CIGARs
         @test !is_compatible(CIGAR("1="), CIGAR("1X"))
@@ -466,7 +463,7 @@ end
         @test !is_compatible(CIGAR("5="), CIGAR("4=1X"))
         @test !is_compatible(CIGAR("10M"), CIGAR(""))
         @test !is_compatible(CIGAR(""), CIGAR("10M"))
-        @test !is_compatible(CIGAR("1S2M3I2H"), CIGAR("1S2M3I"))
+        @test !is_compatible(CIGAR("1S2M3I"), CIGAR("1S2M2I"))
     end
 
     @testset "BAMCIGAR with BAMCIGAR" begin
@@ -484,13 +481,11 @@ end
         @test is_compatible(BAMCIGAR(CIGAR("3M")), BAMCIGAR(CIGAR("1X1M1=")))
         @test is_compatible(BAMCIGAR(CIGAR("1D2M3I")), BAMCIGAR(CIGAR("1D1X1M3I")))
 
-        # OP_S and OP_H are semantically identical
-        @test is_compatible(BAMCIGAR(CIGAR("2S")), BAMCIGAR(CIGAR("2H")))
-        @test is_compatible(BAMCIGAR(CIGAR("3H5M2S")), BAMCIGAR(CIGAR("3S5M2H")))
-
-        # OP_P has no semantic meaning
+        # OP_P and OP_H have no semantic meaning
         @test is_compatible(BAMCIGAR(CIGAR("1D1P2D1M3P")), BAMCIGAR(CIGAR("3D1M")))
         @test is_compatible(BAMCIGAR(CIGAR("5P")), BAMCIGAR(CIGAR("")))
+        @test is_compatible(BAMCIGAR(CIGAR("3H5M")), BAMCIGAR(CIGAR("3=2X")))
+        @test is_compatible(BAMCIGAR(CIGAR("3H5M2H")), BAMCIGAR(CIGAR("3=2X")))
 
         # Incompatible CIGARs
         @test !is_compatible(BAMCIGAR(CIGAR("1=")), BAMCIGAR(CIGAR("1X")))
@@ -509,8 +504,8 @@ end
         @test is_compatible(CIGAR("3M"), BAMCIGAR(CIGAR("1X1=1M")))
         @test is_compatible(BAMCIGAR(CIGAR("5M")), CIGAR("2=3X"))
 
-        @test is_compatible(CIGAR("2S"), BAMCIGAR(CIGAR("2H")))
-        @test is_compatible(BAMCIGAR(CIGAR("3H5M")), CIGAR("3S5M"))
+        @test is_compatible(CIGAR("3H5M"), BAMCIGAR(CIGAR("3=2X")))
+        @test is_compatible(BAMCIGAR(CIGAR("3H5M2H")), CIGAR("3=2X"))
 
         @test is_compatible(CIGAR("2M1P3M"), BAMCIGAR(CIGAR("5M")))
         @test is_compatible(BAMCIGAR(CIGAR("1P2D1P")), CIGAR("2D"))
@@ -533,8 +528,8 @@ end
         # Eq and X converted to M, merged with existing M
         @test normalize(make(T, "1=1X1M")) == make(T, "3M")
 
-        # H at ends becomes S
-        @test normalize(make(T, "3H10M2H")) == make(T, "3S10M2S")
+        # H is deleted
+        @test normalize(make(T, "3H10M2H")) == make(T, "10M")
 
         # Already normalized: unchanged
         @test normalize(make(T, "5M1D8M1I7M")) == make(T, "5M1D8M1I7M")
@@ -554,7 +549,7 @@ end
         @test normalize(make(T, "5M3N10M")) == make(T, "5M3N10M")
 
         # Single element conversions
-        @test normalize(make(T, "5H")) == make(T, "5S")
+        @test normalize(make(T, "5H")) == make(T, "")
         @test normalize(make(T, "5=")) == make(T, "5M")
         @test normalize(make(T, "5X")) == make(T, "5M")
 

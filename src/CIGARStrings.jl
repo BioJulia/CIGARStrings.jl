@@ -124,8 +124,8 @@ then the positions are `(A, B+9, C+9)` after.
 | 1 | `Q   A`  |`OP_I`   | I    | Insertion relative to the reference                  |
 | 2 | `  R A`  |`OP_D`   | D    | Deletion relative to the reference                   |
 | 3 | `  R  `  |`OP_N`   | N    | Reference skipped from the alignment (usually an intron)|
-| 4 | `Q    `  |`OP_S`   | S    | Soft clip (semantically identical to hard clip)      |
-| 5 | `Q    `  |`OP_H`   | H    | Hard clip (semantically identical to soft clip)      |
+| 4 | `Q    `  |`OP_S`   | S    | Soft clip (consumes query)                           |
+| 5 | `     `  |`OP_H`   | H    | Hard clip (does not consume query)                   |
 | 6 | `     `  |`OP_P`   | P    | Padding, position not present in query or reference  |
 | 7 | `Q R A`  |`OP_Eq`  | =    | Alignment match, not mismatch                        |
 | 8 | `Q R A`  |`OP_X`   | X    | Alignment mismatch                                   |
@@ -141,11 +141,12 @@ See also: [`CIGARElement`](@ref)
   is deleted, but not due to an actual deletion (which would be a `D` operation).
   It can also be used for other uses where the reference bases are missing
   for another reason than a deletion, if such a use case is found.
-* `S` and `H` are semantically identical. They both signify the end(s) of the
-  query sequence which are not part of the alignment. They differ only in whether
-  the clipped bases are written in the SEQ field of a SAM record.
-  Typically, hard-clipped bases are present as soft clipped bases in another
-  record, such that writing them in both records would be wasteful.
+* `S` and `H` both represent that ends of query does not align.
+  They differ only in whether the clipped bases, i.e. the ends of the query sequence
+  not part of the alignment, are present in the query sequence.
+  For soft clip, the sequence is present in the query, but not for hard clip. 
+  Soft clip is preferred, and hard clip is only used in rare cases where removing
+  part of the query sequence can lead to memory savings.
 * `P` is only used for a multiple sequence alignment. If a third sequence contains an
   insertion relative to both the query and the reference, the query has a
   `P` at this position, indicating it's present in neither the query nor reference.
@@ -431,7 +432,7 @@ end
 
 const CONSUMES = let
     x = UInt32(0)
-    for query in [OP_M, OP_I, OP_S, OP_H, OP_Eq, OP_X] # not PDN
+    for query in [OP_M, OP_I, OP_S, OP_Eq, OP_X] # not PDNH
         shift = reinterpret(UInt8, query) * 3
         x |= UInt32(1) << shift
     end
@@ -451,10 +452,6 @@ end
 
 Return whether the given CIGAROp consumes (i.e. uses up) bases of the query,
 reference, and alignment, respectively.
-Note that this DOES NOT exactly match the definition as stated in the SAM specs,
-because in those, "consumes query" means whether it consumes bases of the query
-as printed in the SEQ field, and the SEQ field does not include bases marked as
-`OP_H`, despite these actually being part of the query.
 """
 function consumes(x::CIGAROp)::@NamedTuple{query::Bool, ref::Bool, aln::Bool}
     n = CONSUMES >>> ((3 * reinterpret(UInt8, x)) & 31)
@@ -654,9 +651,8 @@ Create a new `AbstractCIGAR`, where the same alignment as `cigar`
 is written in its canonical form.
 
 The normalization process makes the following changes:
-* `OP_H` is converted to `OP_S`
 * `OP_Eq` and `OP_X` are converted to `OP_M`
-* `OP_P` operations are removed
+* `OP_P` and `OP_H` operations are removed
 * Consecutive elements with the same operations are merged
 
 The resulting cigar therefore only contain the operations:
@@ -677,8 +673,8 @@ See also: [`normalize!`](@ref), [`unsafe_normalize`](@ref), [`is_compatible`](@r
 
 # Examples
 ```jldoctest
-julia> normalize(CIGAR("2H3=1X2=4P3=1=1I2X4H"))
-CIGAR("2S10M1I2M4S")
+julia> normalize(CIGAR("2H2S3=1X2=4P3=1=1I2X4H"))
+CIGAR("2S10M1I2M")
 
 julia> normalize(CIGAR("5M1D8M1I7M"))
 CIGAR("5M1D8M1I7M")
@@ -1067,8 +1063,7 @@ ways to annotate the same alignment. In particular, the following rules are used
 when determining if distinct CIGAR operations are equivalent:
 * Two consecutive of the same operations may be collapsed, ex: `1M1M` and `2M`
 * An `OP_M` can encompass both `OP_X` and `OP_Eq`, ex: `3M` and `1X1M1=`
-* `OP_S` and `OP_H` are semantically identical, ex: `2S` and `2H` 
-* `OP_P` has no semantic meaning and is skipped: `1D1P2D1M3P` and `3D1M`
+* `OP_P` and `OP_H` have no semantic meaning and is skipped: `1D1P2D1M3P` and `3D1M`
 
 See also: [`normalize`](@ref)
 
@@ -1136,7 +1131,7 @@ function next_meaningful(
     )::Union{Nothing, Tuple{CIGARElement, Any}}
     while it_return !== nothing
         (elem, state) = it_return
-        elem.op != OP_P && return it_return
+        elem.op ∉ (OP_P, OP_H) && return it_return
         it_return = iterate(cigar, state)
     end
     return nothing
@@ -1144,13 +1139,13 @@ end
 
 # Below is a bitmask, where each chunk of 7 bits correspond to a CIGAR op.
 # The bitfield is a map of which operations it's compatible with.
-# E.g. OP_S and OP_H are compatible with each other, so they have bit 3
-# in the 7-bit bitfield set.
+# OP_P and OP_H share the same compatibility bits, because both are skipped
+# when comparing semantic alignment compatibility.
 
-# Order of bits: X   =   P  H/S   N   D   I
+# Order of bits: X   =  P/H  S   N   D   I
 #          OP_M: 1___1___0___0____0___0___0
 #                       X       =      P        H       S       N      D        I       M
-const COMPAT_LUT = 0b1000000_0100000_0010000_0001000_0001000_0000100_0000010_0000001_1100000
+const COMPAT_LUT = 0b1000000_0100000_0010000_0010000_0001000_0000100_0000010_0000001_1100000
 
 rsh(a::UInt64, b) = a >> (b & 0x3f)
 

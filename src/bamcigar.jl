@@ -206,10 +206,8 @@ function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR
     last_element = CIGARElement(unsafe, UInt32(0x00_00_00_10))
     GC.@preserve mem begin
         for element in cigar
-            element.op === OP_P && continue
-            op = if element.op === OP_H
-                OP_S
-            elseif element.op ∈ (OP_X, OP_Eq)
+            element.op ∈ (OP_P, OP_H) && continue
+            op = if element.op ∈ (OP_X, OP_Eq)
                 OP_M
             else
                 element.op

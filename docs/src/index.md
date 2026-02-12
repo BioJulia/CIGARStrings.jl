@@ -252,8 +252,9 @@ CIGARStrings.TranslationKind
 ## Normalization
 The CIGAR format is redundant, in that the same alignment can be written in multiple different ways. In particular:
 
-* The `S` and `H` operation is semantically identical, so `5H10M` and `5S10M` means the same thing
-* The `P` operation means nothing w.r.t the query and reference and is only used to pad w.r.t a third sequence
+* The `P` and `H` operations means nothing w.r.t the query and reference.
+  `P` is only used to pad w.r.t a third sequence, and `H` signifies that part of
+  the true query is missing from the input query sequence.
 * The `=` and `X` operations are usually redundant with `M`, since the information of matches/mismatches is not given by the alignment itself, but can be determined from the input sequences given the alignment.
 * Consecutive runs of the same operation is allowed, such as `1M1M`, but is better written `2M`
 

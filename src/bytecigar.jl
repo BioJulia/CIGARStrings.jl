@@ -15,7 +15,7 @@ See also: [`CIGARElement`](@ref)
 CIGAR strings are sequences of `CIGARElement`, from the 5' to the 3' of the
 query (or N- to C-terminal for amino acids).
 CIGAR strings comprise the entire query, i.e. the sum of lengths of elements
-with the `XMI=SH` operations equals the length of the query.
+with the `XMI=S` operations equals the length of the query.
 
 For example, the query `AGCGTAGCACACC` that aligns from query base 5 and ref
 base 1002, like this:
@@ -239,14 +239,12 @@ function normalize!(cigar::CIGAR, mem::MutableMemoryView{UInt8})::CIGAR
     source_mem = MemoryView(cigar)
     while it !== nothing
         (element, new_state) = it
-        if element.op === OP_P
+        if element.op ∈ (OP_P, OP_H)
             state = new_state
             it = iterate(cigar, state)
             continue
         end
-        op = if element.op === OP_H
-            OP_S
-        elseif element.op ∈ (OP_Eq, OP_X)
+        op = if element.op ∈ (OP_Eq, OP_X)
             OP_M
         else
             element.op
