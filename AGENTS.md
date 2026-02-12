@@ -18,6 +18,10 @@ julia --project --startup=no
 julia --project=docs --startup=no docs/make.jl
 ```
 
+When running in test mode, Julia has boundscheck always enabled. When running normally,
+out-of-bounds access in functions marked `@inbounds` is undefined behaviour.
+Set `--check-bounds=yes` to force boundschecking when running experiments.
+
 ## Architecture
 
 CIGARStrings.jl provides types for representing CIGAR strings (Concise Idiosyncratic Gapped Alignment Reports) used in the SAM/BAM bioinformatics formats.

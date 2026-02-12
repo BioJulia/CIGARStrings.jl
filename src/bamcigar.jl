@@ -21,7 +21,7 @@ or [`BAMCIGAR(::MutableMemoryView{UInt8}, ::CIGAR)`](@ref)
 ```jldoctest
 julia> c = CIGAR("9S123M1=3I15M2H");
 
-julia> b = BAMCIGAR(c, UInt8[]); # use existing storage
+julia> b = BAMCIGAR(c);
 
 julia> c == b
 true
@@ -130,7 +130,9 @@ function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
         last_was_H = op === OP_H
         is_first = false
     end
-    max(aln_len, n_ops) > typemax(UInt32) && return CIGARError(lastindex(mem) - 3, Errors.IntegerOverflow)
+    if max(aln_len, ref_len, query_len) > typemax(UInt32)
+        return CIGARError(lastindex(mem), Errors.IntegerOverflow)
+    end
     return BAMCIGAR(unsafe, mem, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
 end
 
