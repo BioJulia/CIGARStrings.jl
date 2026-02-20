@@ -17,9 +17,6 @@ using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView, MutableMemoryVi
 
 using LightBoundsErrors: throw_lightboundserror, checkbounds_lightboundserror
 
-struct Unsafe end
-const unsafe = Unsafe()
-
 @noinline unreachable() = error("Unreachable reached")
 
 baremodule Errors
@@ -222,8 +219,8 @@ struct CIGARElement
     # 28 upper bits: Value, lower 4 bits: CIGAROp
     x::UInt32
 
-    CIGARElement(::Unsafe, x::UInt32) = new(x)
-    function CIGARElement(::Unsafe, op::CIGAROp, len::UInt32)
+    global unsafe_cigarelement(x::UInt32) = new(x)
+    global function unsafe_cigarelement(op::CIGAROp, len::UInt32)
         return new((reinterpret(UInt8, op) % UInt32) | (len << 4))
     end
 end
@@ -232,7 +229,7 @@ function CIGARElement(op::CIGAROp, len::Integer)
     ulen = UInt32(len)::UInt32
     ulen > 0x0fffffff && error("CIGARStrings only support cigar operations of length 268435455")
     iszero(ulen) && error("CIGAR cannot have zero-length element")
-    return CIGARElement(unsafe, op, ulen)
+    return unsafe_cigarelement(op, ulen)
 end
 
 function Base.show(io::IO, x::CIGARElement)
@@ -254,7 +251,7 @@ function unsafe_subtract_length(x::CIGARElement, len::UInt32)
     xx = getfield(x, :x)
     u = xx >> 4
     u -= len
-    return CIGARElement(unsafe, u << 4 | (xx & 0x0f))
+    return unsafe_cigarelement(u << 4 | (xx & 0x0f))
 end
 
 """
@@ -309,7 +306,7 @@ function encode!(mem::MutableMemoryView{UInt8}, ::Type{BAMCIGAR}, cigar::BAMCIGA
     @boundscheck checkbounds_lightboundserror(mem, eachindex(src_mem))
     @inbounds copyto!(mem, src_mem)
     dst = @inbounds ImmutableMemoryView(mem)[eachindex(src_mem)]
-    return BAMCIGAR(unsafe, dst, cigar.aln_len, cigar.ref_len, cigar.query_len)
+    return unsafe_bamcigar(dst, cigar.aln_len, cigar.ref_len, cigar.query_len)
 end
 
 function encode!(mem::MutableMemoryView{UInt8}, ::Type{CIGAR}, cigar::CIGAR)
@@ -317,7 +314,7 @@ function encode!(mem::MutableMemoryView{UInt8}, ::Type{CIGAR}, cigar::CIGAR)
     @boundscheck checkbounds_lightboundserror(mem, eachindex(src_mem))
     @inbounds copyto!(mem, src_mem)
     dst = @inbounds ImmutableMemoryView(mem)[eachindex(src_mem)]
-    return CIGAR(unsafe, dst, cigar.n_ops, cigar.aln_len, cigar.ref_len, cigar.query_len)
+    return unsafe_cigar(dst, cigar.n_ops, cigar.aln_len, cigar.ref_len, cigar.query_len)
 end
 
 function encode!(mem::MutableMemoryView{UInt8}, ::Type{BAMCIGAR}, cigar::CIGAR)
@@ -332,7 +329,7 @@ function encode!(mem::MutableMemoryView{UInt8}, ::Type{BAMCIGAR}, cigar::CIGAR)
             ptr += 4
         end
     end
-    return BAMCIGAR(unsafe, ImmutableMemoryView(mem), cigar.aln_len, cigar.ref_len, cigar.query_len)
+    return unsafe_bamcigar(ImmutableMemoryView(mem), cigar.aln_len, cigar.ref_len, cigar.query_len)
 end
 
 function encode!(mem::MutableMemoryView{UInt8}, ::Type{CIGAR}, cigar::BAMCIGAR)
@@ -357,7 +354,7 @@ function encode!(mem::MutableMemoryView{UInt8}, ::Type{CIGAR}, cigar::BAMCIGAR)
         mem[len += 1] = byte
     end
     result_mem = @inbounds ImmutableMemoryView(mem)[1:len]
-    return CIGAR(unsafe, result_mem, length(cigar) % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
+    return unsafe_cigar(result_mem, length(cigar) % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
 end
 
 """
@@ -429,7 +426,7 @@ function encode_append!(v::Vector{UInt8}, ::Type{CIGAR}, cigar::BAMCIGAR)
         push!(v, ((CIGAR_BYTE_LUT >> shift) % UInt8) & 0x7f)
     end
     result_mem = @inbounds ImmutableMemoryView(v)[(old_len + 1):end]
-    return CIGAR(unsafe, result_mem, length(cigar) % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
+    return unsafe_cigar(result_mem, length(cigar) % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
 end
 
 const CONSUMES = let
@@ -517,17 +514,17 @@ struct Translation
     # 4 upper bits for Kind (in case more is needed)
     x::UInt64
 
-    Translation(::Unsafe, x::UInt64) = new(x)
+    global unsafe_translation(x::UInt64) = new(x)
 end
 
 function Translation(kind::TranslationKind, pos::Int)
     unsigned(pos) > 0x0fffffffffffffff && error("Cannot translate position > 1152921504606846975")
-    return Translation(unsafe, kind, pos)
+    return unsafe_translation(kind, pos)
 end
 
-function Translation(::Unsafe, kind::TranslationKind, pos::Int)
+function unsafe_translation(kind::TranslationKind, pos::Int)
     n = (pos % UInt64) | ((reinterpret(UInt8, kind) % UInt64) << 60)
-    return Translation(unsafe, n)
+    return unsafe_translation(n)
 end
 
 const outside_translation = Translation(outside, 0)
@@ -716,7 +713,7 @@ julia> MemoryView(c2) === ImmutableMemoryView(mem)
 true
 
 julia> c2 = normalize!(c, MemoryView([0x00]))
-ERROR: BoundsError:
+ERROR: LightBoundsErrors.LightBoundsError: out-of-bounds indexing: `collection[2]`, where:
 [...]
 ```
 """
@@ -790,7 +787,7 @@ struct PositionMapper{I, C, S, D}
     get_dst::D
 end
 
-const SENTINEL_ELEMENT = CIGARElement(unsafe, typemax(UInt32))
+const SENTINEL_ELEMENT = unsafe_cigarelement(typemax(UInt32))
 
 Base.IteratorSize(::Type{<:PositionMapper{I}}) where {I} = Base.IteratorSize(I)
 Base.length(x::PositionMapper) = length(x.integers)
@@ -853,7 +850,7 @@ end
     # When mapping to own coordinate system we just care if it's inbounds.
     if mapper.get_dst === mapper.get_src
         target > n_symbols(mapper.get_dst, mapper.cigar) && return (target => outside_translation, new_state)
-        return (target => Translation(unsafe, pos, target), new_state)
+        return (target => unsafe_translation(pos, target), new_state)
     end
     while true
         element === SENTINEL_ELEMENT && return (target => outside_translation, new_state)
@@ -863,9 +860,9 @@ end
             in(element.op, (OP_S, OP_H)) && return (target => outside_translation, new_state)
             # Non-gap elements increment the source position.
             if mapper.get_dst(next_anchor) > mapper.get_dst(anchor)
-                return (target => Translation(unsafe, pos, mapper.get_dst(anchor) + (target - mapper.get_src(anchor))), new_state)
+                return (target => unsafe_translation(pos, mapper.get_dst(anchor) + (target - mapper.get_src(anchor))), new_state)
             else
-                return (target => Translation(unsafe, gap, Int(mapper.get_dst(anchor))), new_state)
+                return (target => unsafe_translation(gap, Int(mapper.get_dst(anchor))), new_state)
             end
         else
             (element, cigar_state) = let

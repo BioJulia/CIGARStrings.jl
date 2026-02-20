@@ -46,7 +46,6 @@ CIGARStrings.jl provides types for representing CIGAR strings (Concise Idiosyncr
 - Both CIGAR types store precomputed `aln_len`, `ref_len`, `query_len` for O(1) length queries
 - Parsing uses `try_parse` returning `Union{T, CIGARError}` pattern (no exceptions on invalid input)
 - Memory is backed by `ImmutableMemoryView{UInt8}` from MemoryViews.jl
-- Internal `Unsafe` sentinel type for constructors that skip validation
 - Position translation via `pos_to_pos(from, to, cigar, positions)` returns lazy `PositionMapper` iterator
 
 ### Coordinate Systems
