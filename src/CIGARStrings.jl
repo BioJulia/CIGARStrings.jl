@@ -564,7 +564,7 @@ end
     query_length(::AbstractCIGAR)::Int
 
 Get the number of biosymbols in the query of the `CIGAR`. This is the same
-as the lengths of all `CIGARElement`s of type `M`, `I`, `S`, `H`, `=` and `X`.
+as the lengths of all `CIGARElement`s of type `M`, `I`, `S`, `=` and `X`.
 
 See also: [`ref_length`](@ref), [`aln_length`](@ref)
 

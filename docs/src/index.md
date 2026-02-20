@@ -8,8 +8,8 @@ end
 ```
 
 # CIGARStrings.jl
-CIGARStrings.jl provide functionality for parsing and working with Concise Idiosyncratic Gapped Alignment Report - or CIGAR - strings.
-CIGARs were popularized by the [SAM format](https://en.wikipedia.org/wiki/SAM_(file_format)), and are a compact run length encoding notation to represent pairwise alignments.
+CIGARStrings.jl provides functionality for parsing and working with Concise Idiosyncratic Gapped Alignment Report (CIGAR) strings.
+CIGARs were popularized by the [SAM format](https://en.wikipedia.org/wiki/SAM_(file_format)), and are a compact run-length encoding notation used to represent pairwise alignments.
 They can be found in the SAM, BAM, PAF, and GFA formats.
 
 For example, the following pairwise alignment of a query to a reference:
@@ -19,17 +19,17 @@ For example, the following pairwise alignment of a query to a reference:
        ||||    ||  | |
     R: TAGAACCATA--TGC
 ```
-Can be represented by the CIGAR `5M3D2M2I3M`, representing:
+can be represented by the CIGAR `5M3D2M2I3M`, representing:
 1. 5 matches/mismatches
 2. Then, 3 deletions
 3. Then, 2 matches/mismatches
 4. Then, 2 insertions
 5. Finally, 3 matches/mismatches.
 
-A CIGAR strings is always written in terms of the _query_, and not the reference. 
+A CIGAR string is always written in terms of the _query_, not the reference.
 
 ## Individual alignment operations
-One run of identical alignment operations, e.g. "5 matches/mismatches" are represented
+One run of identical alignment operations, e.g. "5 matches/mismatches," is represented
 by a single `CIGARElement`.
 Conceptually, a `CIGARElement` is an alignment operation (represented by a `CIGAROp`) and a length:
 
@@ -41,16 +41,16 @@ CIGAROp
 ## CIGARs
 A CIGAR string is represented by an `AbstractCIGAR`, which currently has two subtypes: `CIGAR` and `BAMCIGAR`.
 These types differ in their memory layout: The former stores the CIGAR as its ASCII representation (as used in the SAM format), and the latter stores it in a binary format (as used in the BAM format).
-Both typs store its underlying data as an `ImmutableMemoryView{UInt8}`.
+Both types store their underlying data as an `ImmutableMemoryView{UInt8}`.
 
 ```@docs
 AbstractCIGAR
 ```
 
-The API for these two types are almost interchangeable, so examples below will use `CIGAR`, since its plaintext representation makes examples easier.
+The API for these two types is almost interchangeable, so examples below use `CIGAR`, since its plaintext representation makes examples easier to read.
 See [BAMCIGAR section](@ref bamcigar) for a list of all differences between the two types.
 
-CIGAR strings are validated upon construction
+CIGAR strings are validated upon construction.
 
 ```jldoctest
 julia> CIGAR("2M1D3M")
@@ -64,7 +64,7 @@ ERROR: Error around byte 4: Invalid operation. Possible values are "MIDNSHP=X".
 Since CIGAR strings occur in various bioinformatics file formats, it is expected
 that users of CIGARStrings.jl will construct `CIGAR`s from a view into a buffer storing a chunk of the file.
 
-This is zero-copy, and will not to allocate on Julia 1.14 and forward.
+This is zero-copy, and does not allocate on Julia 1.14 and later.
 For example:
 
 ```jldoctest
@@ -80,7 +80,7 @@ CIGAR("15M9D18M")
 CIGAR
 ```
 
-`CIGAR`s are iterable, and returns its `CIGARElement`s, in order:
+`CIGAR`s are iterable, and return their `CIGARElement`s in order:
 
 ```jldoctest
 julia> collect(CIGAR("2M1D3M"))
@@ -129,8 +129,6 @@ alignment length is 15.
     R: TAGAACCATA--TGC
 ```
 
-We always have `aln_length(c) ≥ max(query_length(c), ref_length(c))`
-
 ```jldoctest
 julia> c = CIGAR("5M3D2M2I3M");
 
@@ -144,19 +142,19 @@ julia> aln_length(c)
 15
 ```
 
-Since the CIGAR operation `M` (`OP_M`) is ambiguous to whether is represents matches,
+Since the CIGAR operation `M` (`OP_M`) is ambiguous about whether it represents matches,
 mismatches, or a combination of these, the function [`count_matches`](@ref) can be used to
 count the number of matches in a CIGAR given the number of mismatches.
 
-The number of mismatches are typically output by mappers, making this information
-handily accessible:
+Mismatch counts are typically output by mappers, making this information
+readily accessible.
 
-The alignment identity (number of matches, not mismatches divided by alignment length)
+Alignment identity (number of matches, excluding mismatches, divided by alignment length)
 can be obtained with [`aln_identity`](@ref).
-Like [`count_matches`](@ref), this takes the number of mismatches as an argument:
+Like [`count_matches`](@ref), this takes the number of mismatches as an argument.
 
 ## Comparing CIGARs
-When comparing `CIGAR`s using `==`, it will check if the `CIGAR`s are literally identical, in the
+When comparing `CIGAR`s using `==`, Julia checks whether the `CIGAR`s are literally identical, in the
 sense that they are composed of the same bytes:
 
 ```jldoctest compare
@@ -176,7 +174,7 @@ However, in the above example, since the CIGAR operation `M` signifies a match o
 CIGARs are indeed compatible, since `10M` is also a valid CIGAR annotation for the same alignment
 as `4=1X5=`.
 
-This notion of compatibility tested with `is_compatible`:
+This notion of compatibility can be tested with `is_compatible`:
 
 ```@docs
 is_compatible
@@ -204,10 +202,10 @@ are also written in this alignment.
 We can see that query position 6 aligns to reference position 9, which is also
 alignment position 9.
 
-These position translation can be obtained using the function [`pos_to_pos`](@ref),
+These position translations can be obtained using the function [`pos_to_pos`](@ref),
 specifying the source and destination coordinate systems [`query`](@ref), [`ref`](@ref)
 or [`aln`](@ref).
-When passed an integer, this function returns `Translation` object that contains two properties: `.pos` and `.kind`.
+When passed an integer, this function returns a `Translation` object with two properties: `.pos` and `.kind`.
 
 When a position translation has a straightforward answer, the `.kind` property is
 `CIGARStrings.pos`, and the `.pos` field is the corresponding position:
@@ -222,10 +220,10 @@ julia> pos_to_pos(aln, query, c, 9)
 Translation(pos, 6)
 ```
 
-Note that these operations are in __linear time__, as they scan the CIGAR string from the beginning.
+Note that these operations run in __linear time__, as they scan the CIGAR string from the beginning.
 
 To efficiently query multiple translations in the same scan of the CIGAR string, you can pass a sorted (ascending) iterator of integers.
-In this case, `pos_to_pos` will return a lazy iterator of `Pair{Int, Translation}`, representing `source_index => destination_index`:
+In this case, `pos_to_pos` returns a lazy iterator of `Pair{Int, Translation}`, representing `source_position => mapped_translation`:
 
 ```jldoctest
 julia> c = CIGAR("4M3D2M2I3M"); # alignment above
@@ -252,21 +250,21 @@ CIGARStrings.TranslationKind
 ## Normalization
 The CIGAR format is redundant, in that the same alignment can be written in multiple different ways. In particular:
 
-* The `P` and `H` operations means nothing w.r.t the query and reference.
-  `P` is only used to pad w.r.t a third sequence, and `H` signifies that part of
+* The `P` and `H` operations mean nothing with respect to the query and reference.
+  `P` is only used to pad with respect to a third sequence, and `H` signifies that part of
   the true query is missing from the input query sequence.
 * The `=` and `X` operations are usually redundant with `M`, since the information of matches/mismatches is not given by the alignment itself, but can be determined from the input sequences given the alignment.
-* Consecutive runs of the same operation is allowed, such as `1M1M`, but is better written `2M`
+* Consecutive runs of the same operation are allowed, such as `1M1M`, but are better written as `2M`.
 
-This package provides the functions [`normalize`](@ref), [`normalize!`](@ref) and [`unsafe_normalize`](@ref) which creates new cigars written in the canonical form.
-In the canonical form, each of the points above are addressed: `H` is converted to `S`, `P` is removed, `=` and `X` is converted to `M`, and consecutive identical operations are merged.
+This package provides the functions [`normalize`](@ref), [`normalize!`](@ref), and [`unsafe_normalize`](@ref), which create new CIGARs written in canonical form.
+In canonical form, each of the points above is addressed: `H` and `P` is removed, `=` and `X` are converted to `M`, and consecutive identical operations are merged.
 
-Note that the normalized form of a cigar corresponds to the _same_ pairwise alignment.
+Note that the normalized form of a CIGAR corresponds to the _same_ pairwise alignment.
 Therefore, it is guaranteed that if `is_compatible(a, b)`, then `normalize(a) == normalize(b)` (though not the other way around).
-It is also guaranteed that the result of position translation is identical for a cigar and its normalized version.
+It is also guaranteed that the result of position translation is identical for a CIGAR and its normalized version.
 
 ## Errors and error recovery
-CIGARStrings.jl allows you to parse a poential CIGAR string without throwing an exception if the data is invalid, using the function [`CIGARStrings.try_parse`](@ref).
+CIGARStrings.jl allows you to parse a potential CIGAR string without throwing an exception if the data is invalid, using the function [`CIGARStrings.try_parse`](@ref).
 
 ```@docs
 CIGARStrings.CIGARError
@@ -282,14 +280,14 @@ However, in order to make zero-copy CIGARs possible, the `BAMCIGAR` type is back
 CIGARStrings.BAMCIGAR
 ```
 
-A `BAMCIGAR` can be constructed from its binary representation, using any type which implements `MemoryViews.MemoryView`:
+A `BAMCIGAR` can be constructed from its binary representation using any type that implements `MemoryViews.MemoryView`:
 
 ```jldoctest
 julia> BAMCIGAR("\x54\4\0\0\x70\4\0\0")
 BAMCIGAR(CIGAR("69S71M"))
 ```
 
-This is not zero-cost: Like `CIGAR` the type contains some metadata and is validated upon construction.
+This is not zero-cost: like `CIGAR`, the type contains some metadata and is validated upon construction.
 
 Like `CIGAR`, the `try_parse` function can be used:
 
@@ -298,7 +296,7 @@ julia> CIGARStrings.try_parse(BAMCIGAR, "\x5f\4\0\0\x70\4\0\0")
 CIGARStrings.CIGARError(1, CIGARStrings.Errors.InvalidOperation)
 ```
 
-`CIGAR` and `BAMCIGAR` can be converted ifallably to each other:
+`CIGAR` and `BAMCIGAR` can be converted infallably to each other:
 
 ```jldoctest
 julia> c = CIGAR("6H19S18M1I22=8I2S");

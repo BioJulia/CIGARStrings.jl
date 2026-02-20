@@ -9,13 +9,12 @@ end
 """
     BAMCIGAR <: AbstractCIGAR
 
-A BAMCIGAR is an alternative representation of a CIGAR,
+A `BAMCIGAR` is an alternative representation of a `CIGAR`,
 stored compactly in 32-bit integers.
-Semantically, a BAMCIGAR behaves much similar to a CIGAR.
+Semantically, a `BAMCIGAR` behaves much similar to a `CIGAR`.
 
-Construct a BAMCIGAR either from a CIGAR, taking an optional `Vector{UInt8}`
-to use as backing storage, or using [`CIGARStrings.try_parse`](@ref),
-or [`BAMCIGAR(::MutableMemoryView{UInt8}, ::CIGAR)`](@ref)
+Construct a `BAMCIGAR` either from a `CIGAR`, or using [`encode!`](@ref)
+or [`encode_append!`](@ref)
 
 # Examples
 ```jldoctest
