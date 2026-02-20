@@ -4,6 +4,7 @@ using CIGARStrings
 using CIGARStrings: Errors
 using Test
 using MemoryViews
+using LightBoundsErrors: LightBoundsError
 
 # Instantiation and validation
 @testset "Instantiation" begin
@@ -621,7 +622,7 @@ end
             # One byte less is too small
             if needed > 0
                 mem_small = MemoryView(zeros(UInt8, needed - 1))
-                @test_throws BoundsError normalize!(c, mem_small)
+                @test_throws LightBoundsError normalize!(c, mem_small)
             end
         end
     end
@@ -663,7 +664,7 @@ end
             end
         end
 
-        # BoundsError with exactly one byte too little
+        # LightBoundsError with exactly one byte too little
         for s in ["10M5D3I", "150M", "5H9S1D1D1D2I9S6H"]
             c = CIGAR(s)
             bc = BAMCIGAR(c)
@@ -674,7 +675,7 @@ end
                 needed == 0 && continue
                 # One byte too few
                 too_small = MemoryView(zeros(UInt8, needed - 1))
-                @test_throws BoundsError encode!(too_small, T, src)
+                @test_throws LightBoundsError encode!(too_small, T, src)
                 # Exact size works
                 exact = MemoryView(zeros(UInt8, needed))
                 result = encode!(exact, T, src)
