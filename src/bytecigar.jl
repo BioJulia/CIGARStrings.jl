@@ -33,8 +33,7 @@ struct CIGAR <: AbstractCIGAR
     ref_len::UInt32
     query_len::UInt32
 
-    function CIGAR(
-            ::Unsafe,
+    global function unsafe_cigar(
             mem::ImmutableMemoryView{UInt8},
             n_ops::UInt32,
             aln_len::UInt32,
@@ -68,7 +67,7 @@ function Base.iterate(
             b -= UInt8('=') - UInt8('0')
             enc = @inbounds OP_LUT[min(b + 1, 28)]
             op = reinterpret(CIGAROp, enc)
-            return (CIGARElement(unsafe, op, n % UInt32), i + 1)
+            return (unsafe_cigarelement(op, n % UInt32), i + 1)
         end
     end
     return unreachable()
@@ -156,7 +155,7 @@ function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
     if max(aln_len, n_ops, ref_len, query_len) > typemax(UInt32)
         return CIGARError(lastindex(mem), Errors.IntegerOverflow)
     end
-    return CIGAR(unsafe, mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
+    return unsafe_cigar(mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
 end
 
 function Base.print(out::IO, cigar::CIGAR)
@@ -202,7 +201,7 @@ false
 ```
 """
 function unsafe_switch_memory(x::CIGAR, mem::ImmutableMemoryView{UInt8})
-    return CIGAR(unsafe, mem, x.n_ops, x.aln_len, x.ref_len, x.query_len)
+    return unsafe_cigar(mem, x.n_ops, x.aln_len, x.ref_len, x.query_len)
 end
 
 function count_matches(x::CIGAR, mismatches::Integer)::Int
@@ -229,7 +228,7 @@ function normalize!(cigar::CIGAR, mem::MutableMemoryView{UInt8})::CIGAR
     state = 1
     it = iterate(cigar, state)
     # dummy value for type stability, initial value is not used
-    last_element = CIGARElement(unsafe, UInt32(0x00_00_00_10))
+    last_element = unsafe_cigarelement(UInt32(0x00_00_00_10))
 
     # When merging elements, we overwrite them. So, to overwrite at the right
     # location, we begin writing at this location. Dummy value to begin with.
@@ -262,7 +261,7 @@ function normalize!(cigar::CIGAR, mem::MutableMemoryView{UInt8})::CIGAR
 
             # Update last element
             u = (len << 4) | reinterpret(UInt8, op)
-            last_element = CIGARElement(unsafe, u)
+            last_element = unsafe_cigarelement(u)
 
             # Write digits, backwards, e.g. write "123" as "321".
             # We write them backwards because that's easiest when using
@@ -303,13 +302,13 @@ function normalize!(cigar::CIGAR, mem::MutableMemoryView{UInt8})::CIGAR
 
             # Update last element
             u = (getfield(element, :x) & 0xff_ff_ff_f0) | reinterpret(UInt8, op)
-            last_element = CIGARElement(unsafe, u)
+            last_element = unsafe_cigarelement(u)
         end
         state = new_state
         it = iterate(cigar, state)
     end
     mem = @inbounds ImmutableMemoryView(mem)[1:write_offset]
-    return CIGAR(unsafe, mem, n_ops % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
+    return unsafe_cigar(mem, n_ops % UInt32, cigar.aln_len, cigar.ref_len, cigar.query_len)
 end
 
 function normalize(cigar::CIGAR)

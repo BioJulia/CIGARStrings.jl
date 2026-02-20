@@ -36,8 +36,7 @@ struct BAMCIGAR <: AbstractCIGAR
     ref_len::UInt32
     query_len::UInt32
 
-    function BAMCIGAR(
-            ::Unsafe,
+    global function unsafe_bamcigar(
             mem::ImmutableMemoryView{UInt8},
             aln_len::UInt32,
             ref_len::UInt32,
@@ -62,7 +61,7 @@ function Base.iterate(
     )::Union{Tuple{CIGARElement, Int}, Nothing}
     (state - 1) % UInt >= (length(x.mem) % UInt) && return nothing
     u = load_le_u32(x.mem, state)
-    return (CIGARElement(unsafe, u), state + 4)
+    return (unsafe_cigarelement(u), state + 4)
 end
 
 @inline function load_le_u32(mem::ImmutableMemoryView{UInt8}, i::Int)
@@ -133,7 +132,7 @@ function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
     if max(aln_len, ref_len, query_len) > typemax(UInt32)
         return CIGARError(lastindex(mem), Errors.IntegerOverflow)
     end
-    return BAMCIGAR(unsafe, mem, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
+    return unsafe_bamcigar(mem, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
 end
 
 function Base.:(==)(x::BAMCIGAR, y::BAMCIGAR)
@@ -172,7 +171,7 @@ ref_length(x::BAMCIGAR) = x.ref_len % Int
 aln_length(x::BAMCIGAR) = x.aln_len % Int
 
 function unsafe_switch_memory(x::BAMCIGAR, mem::ImmutableMemoryView{UInt8})
-    return BAMCIGAR(unsafe, mem, x.aln_len, x.ref_len, x.query_len)
+    return unsafe_bamcigar(mem, x.aln_len, x.ref_len, x.query_len)
 end
 
 function count_matches(x::BAMCIGAR, mismatches::Integer)::Int
@@ -203,7 +202,7 @@ end
 function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR
     write_offset = 0
     # dummy value for type stability, initial value is not used
-    last_element = CIGARElement(unsafe, UInt32(0x00_00_00_10))
+    last_element = unsafe_cigarelement(UInt32(0x00_00_00_10))
     GC.@preserve mem begin
         for element in cigar
             element.op ∈ (OP_P, OP_H) && continue
@@ -228,11 +227,11 @@ function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR
             ptr = Ptr{UInt32}(pointer(mem) + write_offset)
             unsafe_store!(ptr, u)
             write_offset += 4
-            last_element = CIGARElement(unsafe, u)
+            last_element = unsafe_cigarelement(u)
         end
     end
     mem = @inbounds ImmutableMemoryView(mem)[1:write_offset]
-    return BAMCIGAR(unsafe, mem, cigar.aln_len, cigar.ref_len, cigar.query_len)
+    return unsafe_bamcigar(mem, cigar.aln_len, cigar.ref_len, cigar.query_len)
 end
 
 function normalize(cigar::BAMCIGAR)
