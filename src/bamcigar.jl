@@ -222,7 +222,7 @@ function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR
                 ((len % UInt32) << 4) | reinterpret(UInt8, op)
             else
                 # Append to end
-                @boundscheck checkbounds(mem, write_offset + 4)
+                @boundscheck checkbounds_lightboundserror(mem, write_offset + 4)
                 (getfield(element, :x) & 0xff_ff_ff_f0) | reinterpret(UInt8, op)
             end
             ptr = Ptr{UInt32}(pointer(mem) + write_offset)

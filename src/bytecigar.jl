@@ -273,7 +273,7 @@ function normalize!(cigar::CIGAR, mem::MutableMemoryView{UInt8})::CIGAR
             while len > 0
                 n_digits += 1
                 (len, rm) = divrem(len, UInt32(10))
-                @boundscheck checkbounds(mem, write_offset + 1)
+                @boundscheck checkbounds_lightboundserror(mem, write_offset + 1)
                 @inbounds mem[(write_offset += 1)] = rm % UInt8 + 0x30
             end
             # Now, reverse digits in-place
@@ -283,14 +283,14 @@ function normalize!(cigar::CIGAR, mem::MutableMemoryView{UInt8})::CIGAR
                 (mem[a], mem[b]) = (mem[b], mem[a])
             end
             # Now write the operation itself
-            @boundscheck checkbounds(mem, write_offset + 1)
+            @boundscheck checkbounds_lightboundserror(mem, write_offset + 1)
             @inbounds mem[(write_offset += 1)] = op_byte
         else
             previous_element_write_offset = write_offset
             # New operation, so we simply copy the memory of the source to `mem`
             n_bytes = new_state - state
             @boundscheck if length(mem) < write_offset + n_bytes
-                throw(BoundsError(mem, write_offset + n_bytes))
+                throw_lightboundserror(mem, write_offset + n_bytes)
             end
             # Copy over digits
             @inbounds for i in state:(new_state - 2)

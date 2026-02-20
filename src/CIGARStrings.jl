@@ -15,6 +15,8 @@ public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
 
 using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView, MutableMemoryView
 
+using LightBoundsErrors: throw_lightboundserror, checkbounds_lightboundserror
+
 struct Unsafe end
 const unsafe = Unsafe()
 
@@ -280,7 +282,7 @@ include("bamcigar.jl")
 Encode `cigar` as type `T` into the beginning of `mem`,
 and return the result as a new `T` backed by `mem`.
 
-Throw a `BoundsError` if `mem` is too short to contain the whole encoding.
+Throw a `LightBoundsError` if `mem` is too short to contain the whole encoding.
 
 !!! warning
     Since the first bytes of `mem` are used to back the newly created cigar,
@@ -304,7 +306,7 @@ true
 """
 function encode!(mem::MutableMemoryView{UInt8}, ::Type{BAMCIGAR}, cigar::BAMCIGAR)
     src_mem = MemoryView(cigar)
-    @boundscheck checkbounds(mem, eachindex(src_mem))
+    @boundscheck checkbounds_lightboundserror(mem, eachindex(src_mem))
     @inbounds copyto!(mem, src_mem)
     dst = @inbounds ImmutableMemoryView(mem)[eachindex(src_mem)]
     return BAMCIGAR(unsafe, dst, cigar.aln_len, cigar.ref_len, cigar.query_len)
@@ -312,7 +314,7 @@ end
 
 function encode!(mem::MutableMemoryView{UInt8}, ::Type{CIGAR}, cigar::CIGAR)
     src_mem = MemoryView(cigar)
-    @boundscheck checkbounds(mem, eachindex(src_mem))
+    @boundscheck checkbounds_lightboundserror(mem, eachindex(src_mem))
     @inbounds copyto!(mem, src_mem)
     dst = @inbounds ImmutableMemoryView(mem)[eachindex(src_mem)]
     return CIGAR(unsafe, dst, cigar.n_ops, cigar.aln_len, cigar.ref_len, cigar.query_len)
@@ -320,7 +322,7 @@ end
 
 function encode!(mem::MutableMemoryView{UInt8}, ::Type{BAMCIGAR}, cigar::CIGAR)
     nbytes = 4 * length(cigar)
-    @boundscheck checkbounds(mem, 1:nbytes)
+    @boundscheck checkbounds_lightboundserror(mem, 1:nbytes)
     mem = @inbounds mem[1:nbytes]
     GC.@preserve mem begin
         ptr = Ptr{UInt32}(pointer(mem))
@@ -688,10 +690,10 @@ function normalize end
 Same as [`normalize`](@ref), but uses allocation of `mem` instead of allocating
 a new array.
 
-Throws a `BoundsError` if `mem` cannot hold the normalized cigar.
+Throws a `LightBoundsError` if `mem` cannot hold the normalized cigar.
 A cigar after normalization is guaranteed to use at most as much memory
 as cigar before normalization, so if `length(mem) ≥ length(MemoryView(cigar))`,
-a `BoundsError` cannot happen.
+a bounds error cannot happen.
 
 !!! warning
     If `mem` aliases `MemoryView(cigar)`,
