@@ -317,7 +317,7 @@ end
 
 function unsafe_normalize(cigar::CIGAR)
     mem = MemoryView(cigar)
-    newmem = MemoryViews.unsafe_from_parts(mem.ref, length(mem))
+    newmem = MemoryViews.unsafe_from_parts(MemoryViews.unsafe_memoryref(mem), length(mem))
     # This works even though the input and output arrays alias, because
     # they alias with the same offset. Since the normalization process happens
     # in a single pass over the input array, and it is never the case that
