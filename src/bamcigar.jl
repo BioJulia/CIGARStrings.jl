@@ -239,7 +239,7 @@ end
 
 function unsafe_normalize(cigar::BAMCIGAR)
     mem = MemoryView(cigar)
-    newmem = MemoryViews.unsafe_from_parts(mem.ref, length(mem))
+    newmem = MemoryViews.unsafe_from_parts(MemoryViews.unsafe_memoryref(mem), length(mem))
     # See comment in `unsafe_normalize(::CIGAR)` for why aliasing is valid
     return @inbounds @inline normalize!(cigar, newmem)
 end

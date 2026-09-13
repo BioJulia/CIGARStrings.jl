@@ -745,7 +745,7 @@ julia> mem = MemoryView(c);
 julia> c2 = unsafe_normalize(c)
 CIGAR("2S2M2S")
 
-julia> MemoryView(c2).ref === mem.ref
+julia> MemoryViews.unsafe_memoryref(MemoryView(c2)) === MemoryViews.unsafe_memoryref(mem)
 true
 ```
 """
