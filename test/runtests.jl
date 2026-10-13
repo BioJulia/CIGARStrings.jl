@@ -109,6 +109,17 @@ end
     end
 end
 
+@testset "CIGARElement construction" begin
+    for len in Any[1, 0x0fffffff, Int8(5), UInt64(9), big(268435455)]
+        e = CIGARElement(OP_M, len)
+        @test e.len == len
+        @test e.op == OP_M
+    end
+    for len in Any[0, -1, typemin(Int), Int8(-3), 0x10000000, typemax(UInt64), 2^32 + 1, big(-1), big(2)^40]
+        @test_throws ArgumentError CIGARElement(OP_M, len)
+    end
+end
+
 @testset "Writing" begin
     for s in [
             "",

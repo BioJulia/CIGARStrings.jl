@@ -11,7 +11,7 @@ export CIGAR,
     encode!, encode_append!
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
-    TranslationKind, PositionMapper, AlignedBlocks, Coordinate
+    TranslationKind, PositionMapper, AlignedBlocks, Coordinate, consumes
 
 using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView, MutableMemoryView
 
@@ -129,7 +129,7 @@ then the positions are `(A, B+9, C+9)` after.
 | 7 | `Q R A`  |`OP_Eq`  | =    | Alignment match, not mismatch                        |
 | 8 | `Q R A`  |`OP_X`   | X    | Alignment mismatch                                   |
 
-See also: [`CIGARElement`](@ref)
+See also: [`CIGARElement`](@ref), [`CIGARStrings.consumes`](@ref)
 
 # Extended help
 * `M` means a match or a mismatch. By default, most programs will emit `M`
@@ -469,6 +469,17 @@ end
 
 Return whether the given CIGAROp consumes (i.e. uses up) bases of the query,
 reference, and alignment, respectively.
+
+See also: [`CIGAROp`](@ref), [`query_length`](@ref), [`ref_length`](@ref), [`aln_length`](@ref)
+
+# Examples
+```jldoctest
+julia> CIGARStrings.consumes(OP_S)
+(query = true, ref = false, aln = false)
+
+julia> CIGARStrings.consumes(OP_M)
+(query = true, ref = true, aln = true)
+```
 """
 function consumes(x::CIGAROp)::@NamedTuple{query::Bool, ref::Bool, aln::Bool}
     n = CONSUMES >>> ((3 * reinterpret(UInt8, x)) & 31)
@@ -583,7 +594,7 @@ end
 Get the number of biosymbols in the query of the `CIGAR`. This is the same
 as the lengths of all `CIGARElement`s of type `M`, `I`, `S`, `=` and `X`.
 
-See also: [`ref_length`](@ref), [`aln_length`](@ref)
+See also: [`ref_length`](@ref), [`aln_length`](@ref), [`CIGARStrings.consumes`](@ref)
 
 # Example
 ```jldoctest
@@ -600,7 +611,7 @@ function query_length end
 Get the number of biosymbols in the reference of the `CIGAR`. This is the same
 as the lengths of all `CIGARElement`s of type `M`, `D`, `N`, `=` and `X`.
 
-See also: [`query_length`](@ref), [`aln_length`](@ref)
+See also: [`query_length`](@ref), [`aln_length`](@ref), [`CIGARStrings.consumes`](@ref)
 
 # Example
 ```jldoctest
@@ -618,7 +629,7 @@ padding and skips are not part of the alignment, but still part of the CIGAR.
 Therefore, the alignment length is the same as the lengths of all `CIGARElement`s
 of type `M`, `I`, `D`, `=` and `X`.
 
-See also: [`query_length`](@ref), [`ref_length`](@ref)
+See also: [`query_length`](@ref), [`ref_length`](@ref), [`CIGARStrings.consumes`](@ref)
 
 # Example
 ```jldoctest
@@ -754,14 +765,17 @@ function normalize! end
 Create a new normalized cigar, re-using the memory of the input `cigar`.
 The normalization process is the same as [`normalize`](@ref).
 
-!!! warning
-    Calling `unsafe_normalize` on a cigar will mutate its memory, even
-    though a `cigar` is constructed from an `ImmutableMemoryView`.
-    Callers must ensure that there are no other references to the memory
-    of `cigar` which assumes that the memory is immutable.
-    For example, calling this function on a `CIGAR` constructed from a
-    `String` risks undefined behaviour, since observing `String`s being
-    mutated is undefined behaviour in Julia.
+Calling `unsafe_normalize` on a cigar will mutate its memory, even
+though a `cigar` is constructed from an `ImmutableMemoryView`.
+Callers must ensure that there are no other references to the memory
+of `cigar` which assumes that the memory is immutable.
+For example, calling this function on a `CIGAR` constructed from a
+`String` risks undefined behaviour, since observing `String`s being
+mutated is undefined behaviour in Julia.
+
+This mutation will also invalidate the input cigar. The invalidated cigar
+should not be used after this call. Doing so may lead to undefined behaviour,
+since the object does not follow its own invariants.
 
 See also: [`normalize`](@ref), [`normalize!`](@ref), [`is_compatible`](@ref)
 
