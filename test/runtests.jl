@@ -754,6 +754,34 @@ end
         c = make(T, "268435454M1=")
         cn = normalize(c)
         @test cn == make(T, "268435455M")
+
+        # Error index is the first byte of the overflowing element in the input
+        c = make(T, "15P268435455M1=")
+        err = try
+            normalize(c)
+        catch e
+            e
+        end
+        @test err isa CIGARStrings.CIGARError
+        @test err.index == (T === CIGAR ? 14 : 9)
+    end
+
+    @testset "Leading zeros are removed" begin
+        for (input, expected) in [
+                ("01M", "1M"),
+                ("001M02I0010D", "1M2I10D"),
+                ("01M01=", "2M"),
+                ("09M001X", "10M"),
+                ("02H03S010M01P04S", "3S10M4S"),
+            ]
+            c = CIGAR(input)
+            @test string(normalize(c)) == expected
+            @test string(unsafe_normalize(copy(c))) == expected
+            # The output is never longer than the input
+            mem = MemoryView(zeros(UInt8, sizeof(expected)))
+            @test string(normalize!(c, mem)) == expected
+            @test MemoryView(normalize(c)) == codeunits(expected)
+        end
     end
 
     # normalize! requires no more memory than the final output size.
