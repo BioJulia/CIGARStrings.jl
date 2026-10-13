@@ -333,6 +333,124 @@ end
     end
 end
 
+@testset "Aligned blocks" begin
+    function to_vec(in, along, c)
+        it = aligned_blocks(in, along, c)
+        @test it isa CIGARStrings.AlignedBlocks
+        v = collect(it)
+        @test v isa Vector{UnitRange{Int}}
+        return v
+    end
+
+    # Naive implementation: Expand each element to positions in `in`, keep those whose
+    # op consumes `along`, then merge adjacent positions.
+    function naive_blocks(in, along, c)
+        idx(coord) = coord === query ? 1 : coord === ref ? 2 : 3
+        kept = Int[]
+        n = 0
+        for e in c
+            consumed = values(CIGARStrings.consumes(e.op))
+            consumed[idx(in)] || continue
+            for _ in 1:e.len
+                n += 1
+                consumed[idx(along)] && push!(kept, n)
+            end
+        end
+        blocks = UnitRange{Int}[]
+        for p in kept
+            if !isempty(blocks) && last(blocks[end]) == p - 1
+                blocks[end] = first(blocks[end]):p
+            else
+                push!(blocks, p:p)
+            end
+        end
+        return blocks
+    end
+
+    @testset "Examples" begin
+        cases = [
+            ("4M", [1:4], [1:4]),
+            ("2S3M1I2M5S", [1:5], [1:5]),
+            ("3M2D3=1X", [1:9], [1:3, 6:9]),
+            ("3M5N2M", [1:3, 9:10], [1:3, 9:10]),
+            ("2M1N1D2M", [1:2, 4:6], [1:2, 5:6]),
+            ("2M2N3N2M", [1:2, 8:9], [1:2, 8:9]),
+            ("3N2M", [4:5], [4:5]),
+            ("5S", UnitRange{Int}[], UnitRange{Int}[]),
+            ("3I", UnitRange{Int}[], UnitRange{Int}[]),
+            ("", UnitRange{Int}[], UnitRange{Int}[]),
+        ]
+        for (s, ref_aln, ref_query) in cases, T in [CIGAR, BAMCIGAR]
+            c = T(CIGAR(s))
+            @test to_vec(ref, aln, c) == ref_aln
+            @test to_vec(ref, query, c) == ref_query
+        end
+        for T in [CIGAR, BAMCIGAR]
+            c = T(CIGAR("2S3M1I2M"))
+            @test to_vec(query, ref, c) == [3:5, 7:8]
+            @test to_vec(query, aln, c) == [3:8]
+        end
+    end
+
+    @testset "All coordinate pairs" begin
+        s = "2H2S4M4I1X2D1=1I1M1I1D2M3N4I1X3P3S1H"
+        coords = [query, ref, aln]
+        for T in [CIGAR, BAMCIGAR]
+            c = T(CIGAR(s))
+            for in in coords, along in coords
+                @test to_vec(in, along, c) == naive_blocks(in, along, c)
+            end
+            @test to_vec(query, query, c) == [1:query_length(c)]
+            @test to_vec(ref, ref, c) == [1:ref_length(c)]
+            @test to_vec(aln, aln, c) == [1:aln_length(c)]
+            @test to_vec(ref, aln, c) == [1:12, 16:16]
+            @test to_vec(query, ref, c) == [3:6, 11:12, 14:14, 16:17, 22:22]
+            @test to_vec(aln, query, c) == [1:9, 12:15, 17:23]
+            @test to_vec(aln, ref, c) == [1:4, 9:12, 14:14, 16:18, 23:23]
+        end
+    end
+
+    @testset "Randomized" begin
+        ops = [OP_M, OP_I, OP_D, OP_N, OP_S, OP_H, OP_P, OP_Eq, OP_X]
+        coords = [query, ref, aln]
+        for _ in 1:500
+            elements = [CIGARElement(rand(ops), rand(1:4)) for _ in 1:rand(0:12)]
+            # Clips are only valid at the ends, so move them there
+            filter!(e -> e.op ∉ (OP_S, OP_H), elements)
+            rand(Bool) && pushfirst!(elements, CIGARElement(OP_S, rand(1:3)))
+            rand(Bool) && push!(elements, CIGARElement(OP_S, rand(1:3)))
+            rand(Bool) && pushfirst!(elements, CIGARElement(OP_H, rand(1:3)))
+            rand(Bool) && push!(elements, CIGARElement(OP_H, rand(1:3)))
+            c = CIGAR(join(string(e.len, e.op == OP_Eq ? "=" : last(string(e.op))) for e in elements))
+            for T in [CIGAR, BAMCIGAR], in in coords, along in coords
+                cc = T(c)
+                blocks = to_vec(in, along, cc)
+                @test blocks == naive_blocks(in, along, cc)
+                @test all(!isempty, blocks)
+                @test all(last(a) + 1 < first(b) for (a, b) in zip(blocks, blocks[2:end]))
+            end
+        end
+    end
+
+    @testset "No allocations" begin
+        # Type params force specialization: Coordinate <: Function, and Julia does not
+        # specialize on Function arguments only passed through to other functions.
+        function sum_blocks(in::I, along::A, c) where {I, A}
+            n = 0
+            for b in aligned_blocks(in, along, c)
+                n += length(b)
+            end
+            return n
+        end
+        for T in [CIGAR, BAMCIGAR]
+            c = T(CIGAR("2S4M4I1X2D1=3N2M3S"))
+            sum_blocks(ref, query, c)
+            @test @allocated(sum_blocks(ref, query, c)) == 0
+            @test @allocated(sum_blocks(query, aln, c)) == 0
+        end
+    end
+end
+
 @testset "BAMCIGAR specifics" begin
     @testset "Construction" begin
         s = "\xd0\0\0\0\x92\0\0\0"

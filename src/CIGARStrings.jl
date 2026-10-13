@@ -6,12 +6,12 @@ export CIGAR,
     query_to_ref, query_to_aln, ref_to_query, ref_to_aln,
     aln_to_query, aln_to_ref, Translation, count_matches,
     BAMCIGAR, AbstractCIGAR, ref, query, aln, pos_to_pos,
-    unsafe_switch_memory, is_compatible,
+    unsafe_switch_memory, is_compatible, aligned_blocks,
     normalize, unsafe_normalize, normalize!,
     encode!, encode_append!
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
-    TranslationKind, PositionMapper
+    TranslationKind, PositionMapper, AlignedBlocks
 
 using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView, MutableMemoryView
 
@@ -115,7 +115,7 @@ e.g. `reinterpret(UInt8, OP_I) === 0x01`.
 The `Consumes` entry below signifies if the operation advances the position
 in the query (`Q`), the reference (`R`) and the alignment (`A`).
 E.g. if the `CIGARElement` `9D` begins at query, ref, aln positions `(A, B, C)`,
-then the positions are `(A, B+9, C+9)` after. 
+then the positions are `(A, B+9, C+9)` after.
 
 | N | Consumes |Variable | Char | Description                                          |
 |:--|:---------|:--------|:-----|:-----------------------------------------------------|
@@ -143,7 +143,7 @@ See also: [`CIGARElement`](@ref)
 * `S` and `H` both represent that ends of query does not align.
   They differ only in whether the clipped bases, i.e. the ends of the query sequence
   not part of the alignment, are present in the query sequence.
-  For soft clip, the sequence is present in the query, but not for hard clip. 
+  For soft clip, the sequence is present in the query, but not for hard clip.
   Soft clip is preferred, and hard clip is only used in rare cases where removing
   part of the query sequence can lead to memory savings.
 * `P` is only used for a multiple sequence alignment. If a third sequence contains an
@@ -476,7 +476,7 @@ See also: [`Translation`](@ref)
 """
     Translation(kind::TranslationKind, pos::Int)
 
-The result of translating from a position in the coordinate system of the 
+The result of translating from a position in the coordinate system of the
 query / reference / alignment to a position in one of the others.
 This type contains two documented properties: `kind::TranslationKind` and `pos::Int`.
 
@@ -1051,6 +1051,132 @@ Translation(gap, 6)
 ```
 """
 aln_to_ref(x::AbstractCIGAR, pos::Integer) = pos_to_pos(aln, ref, x, pos)
+
+# Bit offset of each coordinate system in `CONSUMES`
+consumes_offset(::Query) = 0
+consumes_offset(::Ref) = 1
+consumes_offset(::Aln) = 2
+
+# Bitmask with bit N set if the `CIGAROp` with value N consumes the coordinate system.
+function consumes_mask(coordinate::Coordinate)::UInt16
+    mask = 0x0000
+    for op in 0:8
+        mask |= ((CONSUMES >>> (3 * op + consumes_offset(coordinate))) % UInt16 & 0x0001) << op
+    end
+    return mask
+end
+
+"""
+    AlignedBlocks{C <: AbstractCIGAR}
+
+Public struct returned by [`aligned_blocks`](@ref).
+This type may be referred to in stable code, but its API is defined by
+`aligned_blocks`.
+
+See also: [`aligned_blocks`](@ref)
+"""
+struct AlignedBlocks{C <: AbstractCIGAR}
+    cigar::C
+    # Ops consuming both `in` and `along`
+    extend_mask::UInt16
+    # Ops consuming `in`, but not `along`
+    split_mask::UInt16
+end
+
+Base.IteratorSize(::Type{<:AlignedBlocks}) = Base.SizeUnknown()
+Base.eltype(::Type{<:AlignedBlocks}) = UnitRange{Int}
+
+"""
+    aligned_blocks(in::Coordinate, along::Coordinate, cigar::AbstractCIGAR)::AlignedBlocks
+
+Return a lazy, non-allocating iterator of the blocks of `cigar`.
+
+Blocks are maximal ranges of positions in the coordinate system `in`,
+which are also consumed in the coordinate system `along`.
+The blocks are `UnitRange{Int}` of 1-based positions in `in`, relative to the start
+of the CIGAR, as in [`pos_to_pos`](@ref). The returned values are sorted, non-empty,
+non-overlapping and non-adjecant.
+
+See also: [`pos_to_pos`](@ref), [`CIGARStrings.AlignedBlocks`](@ref)
+
+# Examples
+```jldoctest
+julia> c = CIGAR("2S3M2D1I3M5N2M");
+
+julia> collect(aligned_blocks(ref, aln, c))
+2-element Vector{UnitRange{Int64}}:
+ 1:8
+ 14:15
+
+julia> collect(aligned_blocks(ref, query, c))
+3-element Vector{UnitRange{Int64}}:
+ 1:3
+ 6:8
+ 14:15
+
+julia> collect(aligned_blocks(query, ref, c))
+2-element Vector{UnitRange{Int64}}:
+ 3:5
+ 7:11
+
+julia> collect(aligned_blocks(query, aln, c))
+1-element Vector{UnitRange{Int64}}:
+ 3:11
+```
+
+# Extended help
+For example, `aligned_blocks(ref, query, cigar)` provides an iterator of reference
+positions aligned to any query symbol, separated by regions of `D` and `N`, which
+do not map to any query position.
+`aligned_blocks(ref, aln, cigar)` matches BED12 blocks from
+`bedtools bamtobed -split`, and is useful for computing read depth.
+
+Unlike pysam's `get_blocks` or htsjdk's `getAlignmentBlocks`, operations
+not consuming `in` never split blocks. E.g. `aligned_blocks(ref, query, c)` on `2M1I2M`
+yields one block `1:4`, whereas pysam and htsjdk yield two adjacent blocks.
+"""
+function aligned_blocks(in::Coordinate, along::Coordinate, cigar::AbstractCIGAR)
+    in_mask = consumes_mask(in)
+    along_mask = consumes_mask(along)
+    return AlignedBlocks(cigar, in_mask & along_mask, in_mask & ~along_mask)
+end
+
+Base.iterate(x::AlignedBlocks) = iterate_blocks(x, iterate(x.cigar), 0)
+
+function Base.iterate(x::AlignedBlocks, state)
+    (cigar_state, pos) = state
+    return iterate_blocks(x, iterate(x.cigar, cigar_state), pos)
+end
+
+# `pos` is the last position in `in` consumed before `it`
+@inline function iterate_blocks(x::AlignedBlocks, it, pos::Int)
+    it === nothing && return nothing
+    (element, cigar_state) = it
+    # Zero means no current block, since positions are 1-based
+    start = 0
+    while true
+        bit = 0x0001 << (reinterpret(UInt8, element.op) & 0x0f)
+        len = element.len
+        if !iszero(x.extend_mask & bit)
+            iszero(start) && (start = pos + 1)
+            pos += len
+        elseif !iszero(x.split_mask & bit)
+            iszero(start) || return (unsafe_unitrange(start, pos), (cigar_state, pos + len))
+            pos += len
+        end
+        it = iterate(x.cigar, cigar_state)
+        it === nothing && break
+        (element, cigar_state) = it
+    end
+    iszero(start) && return nothing
+    # cigar_state is now exhausted, so the next call will return `nothing`
+    return (unsafe_unitrange(start, pos), (cigar_state, pos))
+end
+
+# Skips the branch in the `UnitRange` constructor which handles `stop < start`
+@inline function unsafe_unitrange(start::Int, stop::Int)
+    return reinterpret(UnitRange{Int}, (start, stop))
+end
 
 """
     is_compatible(a::AbstractCIGAR, b::AbstractCIGAR)::Bool
