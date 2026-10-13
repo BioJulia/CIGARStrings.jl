@@ -34,6 +34,8 @@ OP_P
 OP_X
 OP_Eq
 CIGARStrings.PositionMapper
+CIGARStrings.AlignedBlocks
+CIGARStrings.Coordinate
 query
 ref
 aln
@@ -48,6 +50,7 @@ ref_to_query
 ref_to_aln
 aln_to_query
 aln_to_ref
+aligned_blocks
 normalize
 normalize!
 unsafe_normalize
