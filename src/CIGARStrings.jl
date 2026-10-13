@@ -11,7 +11,7 @@ export CIGAR,
     encode!, encode_append!
 
 public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
-    TranslationKind, PositionMapper, AlignedBlocks
+    TranslationKind, PositionMapper, AlignedBlocks, Coordinate
 
 using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView, MutableMemoryView
 
@@ -876,6 +876,21 @@ end
     return
 end
 
+"""
+    Coordinate
+
+Abstract type of the coordinate systems [`query`](@ref), [`ref`](@ref) and [`aln`](@ref).
+These are singleton instances of subtypes of `Coordinate`, which may not be subtyped
+outside of CIGARStrings.
+
+Because `Coordinate <: Function`, Julia does not specialize on unannotated arguments
+which are coordinates, if the argument is only passed through to another function.
+Annotate such arguments as `::Coordinate` to make sure Julia specializes on them:
+
+```julia
+my_blocks(c::Coordinate, cigar) = aligned_blocks(ref, c, cigar)
+```
+"""
 abstract type Coordinate <: Function end
 
 struct Query <: Coordinate end

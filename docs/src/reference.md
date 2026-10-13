@@ -35,6 +35,7 @@ OP_X
 OP_Eq
 CIGARStrings.PositionMapper
 CIGARStrings.AlignedBlocks
+CIGARStrings.Coordinate
 query
 ref
 aln
