@@ -149,7 +149,7 @@ end
 end
 
 @testset "Count matches" begin
-    # Maximum mismtaches: 15 + 12 == 27
+    # Maximum mismatches: 15 + 12 == 27
     # Minimum: 12
     # 15 + 7 + 12 == 34
     s = "15M9I7=3D12X"
@@ -505,7 +505,7 @@ end
         end
     end
 
-    @testset "Contruction between the two" begin
+    @testset "Construction between the two" begin
         for s in [
                 "",
                 "500S",
@@ -533,6 +533,41 @@ end
         @test c2 isa BAMCIGAR
         @test c2 == c
     end
+end
+
+@testset "Equality and hashing" begin
+    equal_groups = [
+        [""],
+        ["1M", "01M", "001M"],
+        ["10M", "010M", "0000010M"],
+        ["5H9S1D1D1D2I9S6H", "05H09S01D1D001D2I9S6H"],
+        ["15M1=9D", "15M01=9D"],
+    ]
+    groups = map(equal_groups) do strs
+        cigars = AbstractCIGAR[CIGAR(s) for s in strs]
+        append!(cigars, [BAMCIGAR(c) for c in cigars])
+        # Different memory, same bytes
+        append!(cigars, [copy(c) for c in cigars])
+        cigars
+    end
+    for (i, a_group) in enumerate(groups), (j, b_group) in enumerate(groups)
+        for a in a_group, b in b_group
+            @test (a == b) == (i == j)
+            i == j && @test hash(a) == hash(b)
+        end
+    end
+
+    # Equal metadata, but different elements
+    @test CIGAR("1M2D") != CIGAR("2D1M")
+    @test CIGAR("1M2D") != BAMCIGAR(CIGAR("2D1M"))
+    @test CIGAR("1M1M") != CIGAR("2M")
+    @test hash(CIGAR("1M2D")) != hash(CIGAR("2D1M"))
+
+    # Works in hash-based collections
+    s = Set{AbstractCIGAR}([CIGAR("3M"), CIGAR("03M"), BAMCIGAR(CIGAR("3M"))])
+    @test length(s) == 1
+    d = Dict{AbstractCIGAR, Int}(CIGAR("2S5M") => 1)
+    @test d[BAMCIGAR(CIGAR("02S5M"))] == 1
 end
 
 # TODO: More equality tests

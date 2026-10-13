@@ -40,9 +40,9 @@ using .Errors: CIGARErrorType
 """
     CIGARErrorType
 
-Single-byte enum representing the different kind of errors returned or thrown by
+Single-byte enum representing the different kinds of errors returned or thrown by
 the package CIGARStrings.
-This currently implemented list of error kinds is not exhaustive, in that more
+The currently implemented list of error kinds is not exhaustive, in that more
 could be added in minor versions of this package.
 
 See also: [`CIGARError`](@ref)
@@ -61,7 +61,7 @@ The `kind` and `index` are stable API, in the sense that e.g. an integer overflo
 at position 55 will always be represented by a
 `CIGARError(55, CIGARStrings.Errors.IntegerOverflow)`.
 However, the same invalid CIGAR string may produce multiple different errors, and which
-error is produced in that case **is NOT** stable API, because that depends on specifics
+error is produced in that case **is NOT** stable API, because that depends on specific
 parsing internals.
 
 ```jldoctest
@@ -140,7 +140,7 @@ See also: [`CIGARElement`](@ref)
   is deleted, but not due to an actual deletion (which would be a `D` operation).
   It can also be used for other uses where the reference bases are missing
   for another reason than a deletion, if such a use case is found.
-* `S` and `H` both represent that ends of query does not align.
+* `S` and `H` both represent that the ends of the query do not align.
   They differ only in whether the clipped bases, i.e. the ends of the query sequence
   not part of the alignment, are present in the query sequence.
   For soft clip, the sequence is present in the query, but not for hard clip.
@@ -266,6 +266,24 @@ Base.copy(x::AbstractCIGAR) = unsafe_switch_memory(x, copy(MemoryView(x)))
 
 Base.eltype(::Type{<:AbstractCIGAR}) = CIGARElement
 
+# Callers must check that `x` and `y` have the same number of elements
+@noinline function eq_cigars(x::AbstractCIGAR, y::AbstractCIGAR)
+    for (i, j) in zip(x, y)
+        i === j || return false
+    end
+    return true
+end
+
+# Two `AbstractCIGAR`s are `==` iff they contain the same elements, regardless of
+# their concrete type and byte representation, so the hash is computed from the elements.
+function Base.hash(x::AbstractCIGAR, h::UInt)
+    h ⊻= 0x7a3e5c1f9b2d4e68 % UInt
+    for element in x
+        h = hash(getfield(element, :x), h)
+    end
+    return h
+end
+
 include("bytecigar.jl")
 include("bamcigar.jl")
 
@@ -283,7 +301,7 @@ Throw a `LightBoundsError` if `mem` is too short to contain the whole encoding.
 
 !!! warning
     Since the first bytes of `mem` are used to back the newly created cigar,
-    mutating `mem` after this function is being called will invalidate
+    mutating `mem` after this function has been called will invalidate
     the created cigar.
 
 # Examples
@@ -654,7 +672,7 @@ The normalization process makes the following changes:
 * `OP_P` and `OP_H` operations are removed
 * Consecutive elements with the same operations are merged
 
-The resulting cigar therefore only contain the operations:
+The resulting cigar therefore only contains the operations:
 `M`, `I`, `D`, `S`, `N`.
 
 If `is_compatible(a, b)`, and `a` and `b` are of the same type,
@@ -944,7 +962,7 @@ The coordinates may be `query`, `ref` or `aln`:
 * `query` represents the 1-based index into the query sequence
 * `ref` represents the 1-based index into the reference sequence
 * `aln` is the index of the alignment itself, i.e. equivalent to the sequence of
-  either the query or the ref when gaps according to indel operations of `c`.
+  either the query or the ref when gapped according to indel operations of `c`.
 
 For example, given the query positions `p = [4, 9, 11]` and `c::AbstractCIGAR`, the corresponding
 positions in the reference can be obtained by `[i.second.pos for i in pos_to_pos(query, ref, c, p)]`
@@ -1110,7 +1128,7 @@ Blocks are maximal ranges of positions in the coordinate system `in`,
 which are also consumed in the coordinate system `along`.
 The blocks are `UnitRange{Int}` of 1-based positions in `in`, relative to the start
 of the CIGAR, as in [`pos_to_pos`](@ref). The returned values are sorted, non-empty,
-non-overlapping and non-adjecant.
+non-overlapping and non-adjacent.
 
 See also: [`pos_to_pos`](@ref), [`CIGARStrings.AlignedBlocks`](@ref)
 
@@ -1201,9 +1219,9 @@ Check if `a` and `b` may refer to the same alignment.
 Two distinct CIGARs may refer to the same alignment, because there are multiple
 ways to annotate the same alignment. In particular, the following rules are used
 when determining if distinct CIGAR operations are equivalent:
-* Two consecutive of the same operations may be collapsed, ex: `1M1M` and `2M`
+* Two consecutive elements with the same operation may be merged, ex: `1M1M` and `2M`
 * An `OP_M` can encompass both `OP_X` and `OP_Eq`, ex: `3M` and `1X1M1=`
-* `OP_P` and `OP_H` have no semantic meaning and is skipped: `1D1P2D1M3P` and `3D1M`
+* `OP_P` and `OP_H` have no semantic meaning and are skipped: `1D1P2D1M3P` and `3D1M`
 
 See also: [`normalize`](@ref)
 
@@ -1226,12 +1244,12 @@ function is_compatible(a::AbstractCIGAR, b::AbstractCIGAR)::Bool
     query_length(a) == query_length(b) || return false
     ref_length(a) == ref_length(b) || return false
 
-    # We skip OP_P, which has no semantics meaning when comparing CIGARs
+    # We skip OP_P, which has no semantic meaning when comparing CIGARs
     ait = next_meaningful(a, iterate(a))
     bit = next_meaningful(b, iterate(b))
 
     while true
-        # If one of the CIGARs is exhaused, the other must also be
+        # If one of the CIGARs is exhausted, the other must also be
         if ait === nothing
             return bit === nothing
         elseif bit === nothing

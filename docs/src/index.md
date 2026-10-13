@@ -154,20 +154,25 @@ can be obtained with [`aln_identity`](@ref).
 Like [`count_matches`](@ref), this takes the number of mismatches as an argument.
 
 ## Comparing CIGARs
-When comparing `CIGAR`s using `==`, Julia checks whether the `CIGAR`s are literally identical, in the
-sense that they are composed of the same bytes:
+When comparing `AbstractCIGAR`s using `==`, Julia checks whether they consist of the same
+`CIGARElement`s in the same order.
+This means a `CIGAR` and a `BAMCIGAR` can be equal, and that leading zeros in a `CIGAR` are ignored.
+Consistent with `==`, `hash` is computed from the elements:
 
 ```jldoctest compare
 julia> c1 = CIGAR("10M");
 
 julia> c2 = CIGAR("4=1X5=");
 
-julia> c3 = CIGAR("10M");
+julia> c3 = CIGAR("010M");
 
 julia> c1 == c2
 false
 
-julia> c1 == c3
+julia> c1 == c3 == BAMCIGAR(c1)
+true
+
+julia> hash(c1) == hash(c3) == hash(BAMCIGAR(c1))
 true
 ```
 However, in the above example, since the CIGAR operation `M` signifies a match or a mismatch, all three
@@ -257,7 +262,7 @@ The CIGAR format is redundant, in that the same alignment can be written in mult
 * Consecutive runs of the same operation are allowed, such as `1M1M`, but are better written as `2M`.
 
 This package provides the functions [`normalize`](@ref), [`normalize!`](@ref), and [`unsafe_normalize`](@ref), which create new CIGARs written in canonical form.
-In canonical form, each of the points above is addressed: `H` and `P` is removed, `=` and `X` are converted to `M`, and consecutive identical operations are merged.
+In canonical form, each of the points above is addressed: `H` and `P` are removed, `=` and `X` are converted to `M`, and consecutive identical operations are merged.
 
 Note that the normalized form of a CIGAR corresponds to the _same_ pairwise alignment.
 Therefore, it is guaranteed that if `is_compatible(a, b)`, then `normalize(a) == normalize(b)` (though not the other way around).
@@ -296,7 +301,7 @@ julia> CIGARStrings.try_parse(BAMCIGAR, "\x5f\4\0\0\x70\4\0\0")
 CIGARStrings.CIGARError(1, CIGARStrings.Errors.InvalidOperation)
 ```
 
-`CIGAR` and `BAMCIGAR` can be converted infallably to each other:
+`CIGAR` and `BAMCIGAR` can be converted infallibly to each other:
 
 ```jldoctest
 julia> c = CIGAR("6H19S18M1I22=8I2S");

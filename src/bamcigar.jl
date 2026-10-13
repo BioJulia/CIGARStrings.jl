@@ -11,7 +11,7 @@ end
 
 A `BAMCIGAR` is an alternative representation of a `CIGAR`,
 stored compactly in 32-bit integers.
-Semantically, a `BAMCIGAR` behaves much similar to a `CIGAR`.
+Semantically, a `BAMCIGAR` behaves much like a `CIGAR`.
 
 Construct a `BAMCIGAR` either from a `CIGAR`, or using [`encode!`](@ref)
 or [`encode_append!`](@ref)
@@ -144,20 +144,13 @@ end
 
 Base.:(==)(x::BAMCIGAR, y::CIGAR) = y == x
 function Base.:(==)(x::CIGAR, y::BAMCIGAR)
-    if length(x) != length(y) |
+    if (length(x) != length(y)) |
             (x.aln_len != y.aln_len) |
             (x.ref_len != y.ref_len) |
             (x.query_len != y.query_len)
         return false
     end
     return eq_cigars(x, y)
-end
-
-@noinline function eq_cigars(x::CIGAR, y::BAMCIGAR)
-    for (i, j) in zip(x, y)
-        i === j || return false
-    end
-    return true
 end
 
 function BAMCIGAR(x)
