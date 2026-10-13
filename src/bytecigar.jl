@@ -163,11 +163,16 @@ function Base.print(out::IO, cigar::CIGAR)
 end
 
 function Base.:(==)(x::CIGAR, y::CIGAR)
-    return length(x) == length(y) &&
-        x.aln_len == y.aln_len &&
-        x.ref_len == y.ref_len &&
-        x.query_len == y.query_len &&
-        x.mem == y.mem
+    if (length(x) != length(y)) |
+            (x.aln_len != y.aln_len) |
+            (x.ref_len != y.ref_len) |
+            (x.query_len != y.query_len)
+        return false
+    end
+    # Identical bytes imply identical elements, but not the other way around,
+    # because lengths may have leading zeros, e.g. "01M" and "1M".
+    x.mem == y.mem && return true
+    return eq_cigars(x, y)
 end
 
 query_length(x::CIGAR) = x.query_len % Int
