@@ -671,6 +671,7 @@ The normalization process makes the following changes:
 * `OP_Eq` and `OP_X` are converted to `OP_M`
 * `OP_P` and `OP_H` operations are removed
 * Consecutive elements with the same operations are merged
+* Leading zeros in element lengths are removed, e.g. `01M` becomes `1M`
 
 The resulting cigar therefore only contains the operations:
 `M`, `I`, `D`, `S`, `N`.

@@ -196,7 +196,7 @@ function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR
     # dummy value for type stability, initial value is not used
     last_element = unsafe_cigarelement(UInt32(0x00_00_00_10))
     GC.@preserve mem begin
-        for element in cigar
+        for (element_number, element) in enumerate(cigar)
             element.op ∈ (OP_P, OP_H) && continue
             op = if element.op ∈ (OP_X, OP_Eq)
                 OP_M
@@ -207,7 +207,8 @@ function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR
                 # Overwrite the previous one
                 len = element.len + last_element.len
                 if len > 268435455
-                    throw(CIGARError(write_offset + 1, Errors.IntegerOverflow))
+                    # Index of the first byte of `element` in the input
+                    throw(CIGARError(4 * element_number - 3, Errors.IntegerOverflow))
                 end
                 write_offset -= 4
                 ((len % UInt32) << 4) | reinterpret(UInt8, op)
@@ -217,7 +218,7 @@ function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR
                 (getfield(element, :x) & 0xff_ff_ff_f0) | reinterpret(UInt8, op)
             end
             ptr = Ptr{UInt32}(pointer(mem) + write_offset)
-            unsafe_store!(ptr, u)
+            unsafe_store!(ptr, htol(u))
             write_offset += 4
             last_element = unsafe_cigarelement(u)
         end

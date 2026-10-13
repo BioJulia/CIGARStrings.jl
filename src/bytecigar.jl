@@ -291,13 +291,18 @@ function normalize!(cigar::CIGAR, mem::MutableMemoryView{UInt8})::CIGAR
             @inbounds mem[(write_offset += 1)] = op_byte
         else
             previous_element_write_offset = write_offset
-            # New operation, so we simply copy the memory of the source to `mem`
-            n_bytes = new_state - state
+            # New operation, so we simply copy the memory of the source to `mem`,
+            # except leading zeros. Lengths are nonzero, so a nonzero digit exists.
+            first_digit = state
+            while @inbounds(source_mem[first_digit]) == UInt8('0')
+                first_digit += 1
+            end
+            n_bytes = new_state - first_digit
             @boundscheck if length(mem) < write_offset + n_bytes
                 throw_lightboundserror(mem, write_offset + n_bytes)
             end
             # Copy over digits
-            @inbounds for i in state:(new_state - 2)
+            @inbounds for i in first_digit:(new_state - 2)
                 mem[(write_offset += 1)] = source_mem[i]
             end
             # Copy over new op
