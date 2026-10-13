@@ -152,6 +152,8 @@ readily accessible.
 Alignment identity (number of matches, excluding mismatches, divided by alignment length)
 can be obtained with [`aln_identity`](@ref).
 Like [`count_matches`](@ref), this takes the number of mismatches as an argument.
+Both functions return `nothing` if the number of mismatches is impossible for the CIGAR,
+and `aln_identity` also returns `nothing` if the alignment length is zero.
 
 ## Comparing CIGARs
 When comparing `AbstractCIGAR`s using `==`, Julia checks whether they consist of the same

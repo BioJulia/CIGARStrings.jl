@@ -166,8 +166,7 @@ function unsafe_switch_memory(x::BAMCIGAR, mem::ImmutableMemoryView{UInt8})
     return unsafe_bamcigar(mem, x.aln_len, x.ref_len, x.query_len)
 end
 
-function count_matches(x::BAMCIGAR, mismatches::Integer)::Int
-    mismatches = UInt(mismatches)::UInt
+function count_matches(x::BAMCIGAR, mismatches::Integer)::Union{Nothing, Int}
     n_M = UInt(0)
     n_X = UInt(0)
     n_Eq = UInt(0)
@@ -182,13 +181,7 @@ function count_matches(x::BAMCIGAR, mismatches::Integer)::Int
             n_M += (op == 0x00) * len
         end
     end
-    if mismatches > n_M + n_X
-        throw(DomainError(mismatches, "Mismatches exceed number of possible mismatches in the BAMCIGAR"))
-    end
-    if mismatches < n_X
-        throw(DomainError(mismatches, "Mismatches is lower than minimum possible mismatches in BAMCIGAR"))
-    end
-    return (n_Eq % Int) + (n_M - mismatches + n_X) % Int
+    return count_matches_from_counts(n_M % Int, n_X % Int, n_Eq % Int, mismatches)
 end
 
 function normalize!(cigar::BAMCIGAR, mem::MutableMemoryView{UInt8})::BAMCIGAR

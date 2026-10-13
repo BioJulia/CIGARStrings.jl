@@ -209,8 +209,7 @@ function unsafe_switch_memory(x::CIGAR, mem::ImmutableMemoryView{UInt8})
     return unsafe_cigar(mem, x.n_ops, x.aln_len, x.ref_len, x.query_len)
 end
 
-function count_matches(x::CIGAR, mismatches::Integer)::Int
-    mismatches = UInt(mismatches)::UInt
+function count_matches(x::CIGAR, mismatches::Integer)::Union{Nothing, Int}
     n_M = UInt(0)
     n_X = UInt(0)
     n_Eq = UInt(0)
@@ -219,13 +218,7 @@ function count_matches(x::CIGAR, mismatches::Integer)::Int
         n_X += (i.op === OP_X) * (i.len % UInt)
         n_M += (i.op === OP_M) * (i.len % UInt)
     end
-    if mismatches > n_M + n_X
-        throw(DomainError(mismatches, "Mismatches exceed number of possible mismatches in the CIGAR"))
-    end
-    if mismatches < n_X
-        throw(DomainError(mismatches, "Mismatches is lower than minimum possible mismatches in CIGAR"))
-    end
-    return (n_Eq % Int) + (n_M - mismatches + n_X) % Int
+    return count_matches_from_counts(n_M % Int, n_X % Int, n_Eq % Int, mismatches)
 end
 
 # N.B: This function makes use of the iterator state of `cigar`
