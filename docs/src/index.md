@@ -38,6 +38,13 @@ CIGARElement
 CIGAROp
 ```
 
+Whether an operation consumes bases of the query, the reference, and the alignment
+can be checked with [`CIGARStrings.consumes`](@ref):
+
+```@docs
+CIGARStrings.consumes
+```
+
 ## CIGARs
 A CIGAR string is represented by an `AbstractCIGAR`, which currently has two subtypes: `CIGAR` and `BAMCIGAR`.
 These types differ in their memory layout: The former stores the CIGAR as its ASCII representation (as used in the SAM format), and the latter stores it in a binary format (as used in the BAM format).
