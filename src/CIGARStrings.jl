@@ -136,8 +136,8 @@ See also: [`CIGARElement`](@ref)
   instead of `X` or `=`, since the important part of the CIGAR is where the
   insertions and deletions are placed. To determine which bases in an `M`
   are matches and mismatches, the two sequences can be compared, base-wise.
-* `N` means that the region spans an intron, which means the query sequence
-  is deleted, but not due to an actual deletion (which would be a `D` operation).
+* `N` means that the region spans an intron, which means the reference sequence
+  is skipped, but not due to a deletion (which would be a `D` operation).
   It can also be used for other uses where the reference bases are missing
   for another reason than a deletion, if such a use case is found.
 * `S` and `H` both represent that the ends of the query do not align.
@@ -145,7 +145,8 @@ See also: [`CIGARElement`](@ref)
   not part of the alignment, are present in the query sequence.
   For soft clip, the sequence is present in the query, but not for hard clip.
   Soft clip is preferred, and hard clip is only used in rare cases where removing
-  part of the query sequence can lead to memory savings.
+  part of the query sequence can lead to memory savings, or fo chimeric
+  alignments.
 * `P` is only used for a multiple sequence alignment. If a third sequence contains an
   insertion relative to both the query and the reference, the query has a
   `P` at this position, indicating it's present in neither the query nor reference.
@@ -504,8 +505,7 @@ This type contains two documented properties: `kind::TranslationKind` and `pos::
   `.kind == pos`, and the position is the `pos`'d symbol in the target coordinate
   system.
 * If the position maps to a gap, `pos` is the position of the symbol before the
-  gap, and `kind == gap`. When translating to the `aln` coordinate system,
-  the kind is never `gap`.
+  gap, and `kind == gap`.
 
 See also: [`CIGARStrings.TranslationKind`](@ref)
 
@@ -767,13 +767,13 @@ The normalization process is the same as [`normalize`](@ref).
 See also: [`normalize`](@ref), [`normalize!`](@ref), [`is_compatible`](@ref)
 
 # Examples
-```
+```jldoctest
 julia> c = CIGAR(collect(b"2H1X1=2H"));
 
 julia> mem = MemoryView(c);
 
 julia> c2 = unsafe_normalize(c)
-CIGAR("2S2M2S")
+CIGAR("2M")
 
 julia> MemoryViews.unsafe_memoryref(MemoryView(c2)) === MemoryViews.unsafe_memoryref(mem)
 true
@@ -944,7 +944,7 @@ struct Ref <: Coordinate end
 "Coordinate system representing the 1-based index in the query sequence"
 const query = Query()
 
-"Coordinate system representing the 1-based index in the alignment (i.e. query/ref including gaps)"
+"Coordinate system representing the 1-based index in the alignment (i.e. query/ref including gaps in either, but not both)"
 const aln = Aln()
 
 "Coordinate system representing the 1-based index in the reference sequence"
@@ -961,7 +961,7 @@ n_symbols(::Aln, x::AbstractCIGAR) = aln_length(x)
 """
     pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, pos::Integer)::Translation
 
-Similar to the generic `pos_to_pos`, but returns the resulting integer immediately instead of returning
+Similar to the generic `pos_to_pos`, but returns the resulting `Translation` immediately instead of returning
 a lazy iterator.
 """
 function pos_to_pos(from::Coordinate, to::Coordinate, cigar::AbstractCIGAR, pos::Integer)

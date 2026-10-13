@@ -218,7 +218,7 @@ When a position translation has a straightforward answer, the `.kind` property i
 `CIGARStrings.pos`, and the `.pos` field is the corresponding position:
 
 ```jldoctest
-julia> c = CIGAR("4M3D2M2I3M"); # alignment above
+julia> c = CIGAR("5M3D2M2I3M"); # alignment above
 
 julia> pos_to_pos(query, ref, c, 6)
 Translation(pos, 9)
@@ -233,7 +233,7 @@ To efficiently query multiple translations in the same scan of the CIGAR string,
 In this case, `pos_to_pos` returns a lazy iterator of `Pair{Int, Translation}`, representing `source_position => mapped_translation`:
 
 ```jldoctest
-julia> c = CIGAR("4M3D2M2I3M"); # alignment above
+julia> c = CIGAR("5M3D2M2I3M"); # alignment above
 
 julia> it = pos_to_pos(query, ref, c, [1, 5, 6, 11]);
 
@@ -243,7 +243,7 @@ julia> length(it)
 julia> collect(it)
 4-element Vector{Pair{Int64, Translation}}:
   1 => Translation(pos, 1)
-  5 => Translation(pos, 8)
+  5 => Translation(pos, 5)
   6 => Translation(pos, 9)
  11 => Translation(pos, 12)
 ```
