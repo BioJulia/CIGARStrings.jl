@@ -227,10 +227,9 @@ struct CIGARElement
 end
 
 function CIGARElement(op::CIGAROp, len::Integer)
-    ulen = UInt32(len)::UInt32
-    ulen > 0x0fffffff && error("CIGARStrings only support cigar operations of length 268435455")
-    iszero(ulen) && error("CIGAR cannot have zero-length element")
-    return unsafe_cigarelement(op, ulen)
+    len > 0x0fffffff && throw(ArgumentError("CIGARStrings only support cigar operations of length 268435455"))
+    len < 1 && throw(ArgumentError("CIGAR elements must have a length of at least 1"))
+    return unsafe_cigarelement(op, len % UInt32)
 end
 
 function Base.show(io::IO, x::CIGARElement)
