@@ -630,7 +630,7 @@ julia> aln_length(CIGAR("1S5M2D6M2I5M"))
 function aln_length end
 
 """
-    count_matches(::AbstractCIGAR, mismatches::Integer)::Int
+    count_matches(::AbstractCIGAR, mismatches::Integer)::Union{Nothing, Int}
 
 Count the number of matches in the `AbstractCIGAR`, given the input number
 of `mismatches`.
@@ -638,7 +638,7 @@ The `mismatches` argument is necessary, because `OP_M` is ambiguous, and
 can encode any combination of matches and mismatches.
 
 If `mismatches` is not in `X:(M+X)` where `M` is the number of symbols
-marked `OP_M`, and `X` the number of `OP_X`, throw a `DomainError`.
+marked `OP_M`, and `X` the number of `OP_X`, return `nothing`.
 
 # Examples
 ```jldoctest
@@ -650,16 +650,27 @@ julia> count_matches(c, 8)
 julia> count_matches(c, 25)
 22
 
-julia> count_matches(c, 5) # lower bound is 6
-ERROR: DomainError
-[...]
+julia> count_matches(c, 5) === nothing # lower bound is 6
+true
 
-julia> count_matches(c, 26) # upper bound is 25
-ERROR: DomainError
-[...]
+julia> count_matches(c, 26) === nothing # upper bound is 25
+true
 ```
 """
 function count_matches end
+
+# Compute the number of matches from the number of bases with each op.
+# Returns `nothing` if `mismatches` is not in `n_X:(n_M + n_X)`
+function count_matches_from_counts(n_M::Int, n_X::Int, n_Eq::Int, mismatches::Integer)::Union{Nothing, Int}
+    # This check is compiled away for `Int` and narrower integer types
+    typemin(Int) ≤ mismatches ≤ typemax(Int) || return nothing
+    # Mismatches that must be part of the `M` ops.
+    # It can't overflow into the valid range, since `n_M + n_X` is far below `typemax(Int)`
+    m_mismatches = (mismatches % Int) - n_X
+    # Checks 0 ≤ m_mismatches ≤ n_M in one comparison
+    (m_mismatches % UInt) > (n_M % UInt) && return nothing
+    return n_Eq + n_M - m_mismatches
+end
 
 """
     normalize(cigar::T)::T where {T <: AbstractCIGAR}
@@ -771,23 +782,37 @@ true
 function unsafe_normalize end
 
 """
-    aln_identity(::AbstractCIGAR, mismatches::Int)::Float64
+    aln_identity(::AbstractCIGAR, mismatches::Integer)::Union{Nothing, Float64}
 
 Compute the alignment identity of the `AbstractCIGAR`,
 computed as the number of matches
 (not mismatches) divided by alignment length.
 Since the CIGAR itself may not provide information about the precise number of
 mismatches, the amount of mismatches is an argument.
-The result is always in [0.0, 1.0].
 
-# Example
+Return `nothing` if the alignment length is zero, or if `mismatches` is invalid
+(see [`count_matches`](@ref)). Otherwise, the result is in [0.0, 1.0].
+The two cases can be distinguished by checking `iszero(aln_length(x))`, or by
+calling [`count_matches`](@ref) and [`aln_length`](@ref) directly.
+
+# Examples
 ```jldoctest
 julia> aln_identity(CIGAR("3M1D3M1I2M"), 2)
 0.6
+
+julia> aln_identity(CIGAR("5S"), 0) === nothing # alignment length is zero
+true
+
+julia> aln_identity(CIGAR("3M1D3M1I2M"), 9) === nothing # too many mismatches
+true
 ```
 """
-function aln_identity(x::AbstractCIGAR, mismatches::Int)::Float64
-    return count_matches(x, mismatches) / aln_length(x)
+function aln_identity(x::AbstractCIGAR, mismatches::Integer)::Union{Nothing, Float64}
+    len = aln_length(x)
+    iszero(len) && return nothing
+    matches = count_matches(x, mismatches)
+    isnothing(matches) && return nothing
+    return matches / len
 end
 
 """

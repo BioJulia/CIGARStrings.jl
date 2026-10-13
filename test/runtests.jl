@@ -154,11 +154,18 @@ end
     # 15 + 7 + 12 == 34
     s = "15M9I7=3D12X"
     for c in [CIGAR(s), BAMCIGAR(CIGAR(s))]
-        @test_throws InexactError count_matches(c, -1)
-        @test_throws InexactError count_matches(c, typemin(Int))
+        @test count_matches(c, -1) === nothing
+        @test count_matches(c, typemin(Int)) === nothing
+        @test count_matches(c, typemax(Int)) === nothing
+        @test count_matches(c, typemax(UInt)) === nothing
+        @test count_matches(c, Int128(2)^64 + 20) === nothing
+        @test count_matches(c, big(-1)) === nothing
 
-        @test_throws Exception count_matches(c, 28)
-        @test_throws Exception count_matches(c, 11)
+        @test count_matches(c, 28) === nothing
+        @test count_matches(c, 11) === nothing
+
+        @test count_matches(c, UInt8(20)) === 14
+        @test count_matches(c, big(20)) === 14
 
         @test count_matches(c, 27) == 7
         @test count_matches(c, 20) == 14
@@ -170,7 +177,12 @@ end
         @test count_matches(c, 1) == 99
         @test count_matches(c, 97) == 3
         @test count_matches(c, 100) == 0
-        @test_throws Exception count_matches(c, 101)
+        @test count_matches(c, 101) === nothing
+    end
+
+    for c in [CIGAR(""), CIGAR("5S3H"), BAMCIGAR(CIGAR("5S3H"))]
+        @test count_matches(c, 0) === 0
+        @test count_matches(c, 1) === nothing
     end
 end
 
@@ -180,8 +192,10 @@ end
     # Minimum mismatches: 4
     s = "11S9M4X3D3M9I12M"
     for c in [CIGAR(s), BAMCIGAR(CIGAR(s))]
-        @test_throws Exception aln_identity(c, 29)
-        @test_throws Exception aln_identity(c, 3)
+        @test aln_identity(c, 29) === nothing
+        @test aln_identity(c, 3) === nothing
+        @test aln_identity(c, -1) === nothing
+        @test aln_identity(c, UInt(4)) == 0.6
 
         @test aln_identity(c, 4) == 0.6
         @test aln_identity(c, 5) == 0.575
@@ -190,6 +204,11 @@ end
         @test aln_identity(c, 20) == 0.2
         @test aln_identity(c, 25) == 0.075
         @test aln_identity(c, 28) == 0.0
+    end
+
+    for c in [CIGAR(""), CIGAR("5S3H"), BAMCIGAR(CIGAR("5S3H"))]
+        @test aln_identity(c, 0) === nothing
+        @test aln_identity(c, 1) === nothing
     end
 end
 
