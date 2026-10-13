@@ -174,7 +174,7 @@ function count_matches(x::BAMCIGAR, mismatches::Integer)::Int
     mem = x.mem
     GC.@preserve mem begin
         @inbounds for i in 1:4:length(mem)
-            u = unsafe_load(Ptr{UInt32}(pointer(mem, i)))
+            u = ltoh(unsafe_load(Ptr{UInt32}(pointer(mem, i))))
             op = u & 0x0f
             len = (u >>> 4) % UInt
             n_Eq += (op == 0x07) * len
