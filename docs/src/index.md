@@ -287,10 +287,10 @@ However, in order to make zero-copy CIGARs possible, the `BAMCIGAR` type is back
 CIGARStrings.BAMCIGAR
 ```
 
-A `BAMCIGAR` can be constructed from its binary representation using any type that implements `MemoryViews.MemoryView`:
+A `BAMCIGAR` can be constructed from its binary representation using any `AbstractArray{UInt8}` that implements `MemoryViews.MemoryView`:
 
 ```jldoctest
-julia> BAMCIGAR("\x54\4\0\0\x70\4\0\0")
+julia> BAMCIGAR(b"\x54\4\0\0\x70\4\0\0")
 BAMCIGAR(CIGAR("69S71M"))
 ```
 
@@ -299,7 +299,7 @@ This is not zero-cost: like `CIGAR`, the type contains some metadata and is vali
 Like `CIGAR`, the `try_parse` function can be used:
 
 ```jldoctest
-julia> CIGARStrings.try_parse(BAMCIGAR, "\x5f\4\0\0\x70\4\0\0")
+julia> CIGARStrings.try_parse(BAMCIGAR, b"\x5f\4\0\0\x70\4\0\0")
 CIGARStrings.CIGARError(1, CIGARStrings.Errors.InvalidOperation)
 ```
 
