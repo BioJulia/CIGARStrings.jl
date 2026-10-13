@@ -86,7 +86,7 @@ function Base.print(io::IO, x::BAMCIGAR)
     return nothing
 end
 
-function try_parse(::Type{BAMCIGAR}, x)::Union{CIGARError, BAMCIGAR}
+function try_parse(::Type{BAMCIGAR}, x::AbstractArray{UInt8})::Union{CIGARError, BAMCIGAR}
     mem = ImmutableMemoryView(x)::ImmutableMemoryView{UInt8}
 
     # Length must be divisible by 4
@@ -153,7 +153,7 @@ function Base.:(==)(x::CIGAR, y::BAMCIGAR)
     return eq_cigars(x, y)
 end
 
-function BAMCIGAR(x)
+function BAMCIGAR(x::AbstractArray{UInt8})
     y = try_parse(BAMCIGAR, x)
     return y isa CIGARError ? throw(y) : y
 end

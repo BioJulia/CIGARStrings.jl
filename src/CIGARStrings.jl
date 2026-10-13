@@ -782,6 +782,28 @@ true
 function unsafe_normalize end
 
 """
+    try_parse(T::Type{CIGAR}, x)::Union{CIGAR, CIGARError}
+    try_parse(T::Type{BAMCIGAR}, x::AbstractArray{UInt8})::Union{BAMCIGAR, CIGARError}
+
+Cast `x` to a `MemoryView{UInt8}`, and try parsing a [`T`](@ref) from it.
+If the parsing is unsuccessful, return a [`CIGARError`](@ref)
+
+# Examples
+```jldoctest
+julia> c = CIGARStrings.try_parse(CIGAR, "2S1M9I");
+
+julia> c isa CIGAR # success
+true
+
+julia> c = CIGARStrings.try_parse(CIGAR, "1S7H9M1S");
+
+julia> c.kind
+InvalidHardClip::CIGARErrorType = 0x03
+```
+"""
+function try_parse end
+
+"""
     aln_identity(::AbstractCIGAR, mismatches::Integer)::Union{Nothing, Float64}
 
 Compute the alignment identity of the `AbstractCIGAR`,

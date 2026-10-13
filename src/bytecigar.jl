@@ -84,25 +84,6 @@ end
 
 Base.length(x::CIGAR) = x.n_ops % Int
 
-"""
-    try_parse(::Type{CIGAR}, x)::Union{CIGAR, CIGARError}
-
-Cast `x` to a `MemoryView{UInt8}`, and try parsing a [`CIGAR`](@ref) from it.
-If the parsing is unsuccessful, return a [`CIGARError`](@ref)
-
-# Examples
-```jldoctest
-julia> c = CIGARStrings.try_parse(CIGAR, "2S1M9I");
-
-julia> c isa CIGAR # success
-true
-
-julia> c = CIGARStrings.try_parse(CIGAR, "1S7H9M1S");
-
-julia> c.kind
-InvalidHardClip::CIGARErrorType = 0x03
-```
-"""
 function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
     mem = ImmutableMemoryView(x)::ImmutableMemoryView{UInt8}
     # H must be either first or last

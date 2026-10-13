@@ -474,19 +474,19 @@ end
 
 @testset "BAMCIGAR specifics" begin
     @testset "Construction" begin
-        s = "\xd0\0\0\0\x92\0\0\0"
+        s = b"\xd0\0\0\0\x92\0\0\0"
         @test BAMCIGAR(s) == CIGAR("13M9D")
         c = BAMCIGAR(s)
         @test MemoryView(c) == MemoryView(s)
 
-        @test CIGARStrings.try_parse(BAMCIGAR, "abc").kind == Errors.NotModFourLength
+        @test CIGARStrings.try_parse(BAMCIGAR, b"abc").kind == Errors.NotModFourLength
 
         for (bad, err) in Any[
-                ("\0\0\0\0", Errors.ZeroLength),
-                ("\x10\0\0\0\x15\0\0\0\x10\0\0\0", Errors.InvalidHardClip),
-                ("\x1a\0\0\0", Errors.InvalidOperation),
-                ("abcdefghi", Errors.NotModFourLength),
-                ("\x10\0\0\0\x14\0\0\0\x10\0\0\0", Errors.InvalidSoftClip),
+                (b"\0\0\0\0", Errors.ZeroLength),
+                (b"\x10\0\0\0\x15\0\0\0\x10\0\0\0", Errors.InvalidHardClip),
+                (b"\x1a\0\0\0", Errors.InvalidOperation),
+                (b"abcdefghi", Errors.NotModFourLength),
+                (b"\x10\0\0\0\x14\0\0\0\x10\0\0\0", Errors.InvalidSoftClip),
             ]
             @test CIGARStrings.try_parse(BAMCIGAR, bad).kind == err
         end
