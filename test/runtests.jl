@@ -433,9 +433,9 @@ end
     end
 
     @testset "No allocations" begin
-        # Type params force specialization: Coordinate <: Function, and Julia does not
+        # Annotation forces specialization: Coordinate <: Function, and Julia does not
         # specialize on Function arguments only passed through to other functions.
-        function sum_blocks(in::I, along::A, c) where {I, A}
+        function sum_blocks(in::CIGARStrings.Coordinate, along::CIGARStrings.Coordinate, c)
             n = 0
             for b in aligned_blocks(in, along, c)
                 n += length(b)
@@ -444,7 +444,9 @@ end
         end
         for T in [CIGAR, BAMCIGAR]
             c = T(CIGAR("2S4M4I1X2D1=3N2M3S"))
+            # Warm up both specializations so compilation isn't counted by @allocated
             sum_blocks(ref, query, c)
+            sum_blocks(query, aln, c)
             @test @allocated(sum_blocks(ref, query, c)) == 0
             @test @allocated(sum_blocks(query, aln, c)) == 0
         end
