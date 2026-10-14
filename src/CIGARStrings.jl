@@ -10,7 +10,7 @@ export CIGAR,
     normalize, unsafe_normalize, normalize!,
     encode!, encode_append!
 
-public CIGARError, CIGARErrorType, Errors, try_parse, outside, pos, gap,
+public CIGARError, CIGARErrorType, Errors, try_parse, try_from_elements, outside, pos, gap,
     TranslationKind, PositionMapper, AlignedBlocks, Coordinate, consumes
 
 using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView, MutableMemoryView
@@ -829,8 +829,34 @@ julia> c = CIGARStrings.try_parse(CIGAR, "1S7H9M1S");
 julia> c.kind
 InvalidHardClip::CIGARErrorType = 0x03
 ```
+
+See also: [`CIGARStrings.try_from_elements`](@ref)
 """
 function try_parse end
+
+"""
+    try_from_elements(T::Type{<:Union{CIGAR, BAMCIGAR}}, x::AbstractVector{CIGARElement})::Union{T, CIGARError}
+
+Try constructing a `T` from the elements in `x`.
+If the elements do not form a valid CIGAR, return a [`CIGARError`](@ref),
+whose index is the index in `x` of the element where the error was found.
+
+The throwing equivalents are `CIGAR(x)` and `BAMCIGAR(x)`.
+
+# Examples
+```jldoctest
+julia> c = CIGARStrings.try_from_elements(CIGAR, [CIGARElement(OP_S, 2), CIGARElement(OP_M, 9)])
+CIGAR("2S9M")
+
+julia> c = CIGARStrings.try_from_elements(BAMCIGAR, [CIGARElement(OP_M, 1), CIGARElement(OP_H, 3), CIGARElement(OP_M, 2)]);
+
+julia> (c.kind, c.index)
+(CIGARStrings.Errors.InvalidHardClip, 2)
+```
+
+See also: [`CIGARStrings.try_parse`](@ref)
+"""
+function try_from_elements end
 
 """
     aln_identity(::AbstractCIGAR, mismatches::Integer)::Union{Nothing, Float64}

@@ -13,8 +13,9 @@ A `BAMCIGAR` is an alternative representation of a `CIGAR`,
 stored compactly in 32-bit integers.
 Semantically, a `BAMCIGAR` behaves much like a `CIGAR`.
 
-Construct a `BAMCIGAR` either from a `CIGAR`, or using [`encode!`](@ref)
-or [`encode_append!`](@ref)
+Construct a `BAMCIGAR` either from a `CIGAR`, from its binary representation
+as a byte array, from an `AbstractVector{CIGARElement}`, or using [`encode!`](@ref)
+or [`encode_append!`](@ref).
 
 # Examples
 ```jldoctest
@@ -134,6 +135,25 @@ function try_parse(::Type{BAMCIGAR}, x::AbstractArray{UInt8})::Union{CIGARError,
     return unsafe_bamcigar(mem, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
 end
 
+function try_from_elements(::Type{BAMCIGAR}, elements::AbstractVector{CIGARElement})::Union{CIGARError, BAMCIGAR}
+    # The in-memory representation of a CIGARElement is the same as an element
+    # in a BAMCIGAR, so copy the elements, then validate them by parsing.
+    # Elements may be invalid if created from arbitrary bits,
+    # e.g. `Vector{CIGARElement}(undef, n)`, which the parser also handles.
+    mem = Memory{UInt8}(undef, 4 * length(elements))
+    GC.@preserve mem begin
+        ptr = Ptr{UInt32}(pointer(mem))
+        for element in elements
+            unsafe_store!(ptr, htol(getfield(element, :x)))
+            ptr += 4
+        end
+    end
+    y = try_parse(BAMCIGAR, mem)
+    y isa CIGARError || return y
+    # Convert byte index to index of the element in `elements`
+    return CIGARError(firstindex(elements) + ((y.index - 1) >>> 2), y.kind)
+end
+
 function Base.:(==)(x::BAMCIGAR, y::BAMCIGAR)
     return length(x) == length(y) &&
         x.aln_len == y.aln_len &&
@@ -155,6 +175,11 @@ end
 
 function BAMCIGAR(x::AbstractArray{UInt8})
     y = try_parse(BAMCIGAR, x)
+    return y isa CIGARError ? throw(y) : y
+end
+
+function BAMCIGAR(x::AbstractVector{CIGARElement})
+    y = try_from_elements(BAMCIGAR, x)
     return y isa CIGARError ? throw(y) : y
 end
 

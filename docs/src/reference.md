@@ -19,6 +19,7 @@ CIGARStrings.TranslationKind
 CIGARStrings.CIGARError
 CIGARStrings.CIGARErrorType
 CIGARStrings.try_parse
+CIGARStrings.try_from_elements
 ```
 
 ```@docs

@@ -279,11 +279,13 @@ It is also guaranteed that the result of position translation is identical for a
 
 ## Errors and error recovery
 CIGARStrings.jl allows you to parse a potential CIGAR string without throwing an exception if the data is invalid, using the function [`CIGARStrings.try_parse`](@ref).
+Similarly, [`CIGARStrings.try_from_elements`](@ref) constructs a CIGAR from a vector of `CIGARElement` without throwing.
 
 ```@docs
 CIGARStrings.CIGARError
 CIGARStrings.CIGARErrorType
 CIGARStrings.try_parse
+CIGARStrings.try_from_elements
 ```
 
 ## [The BAMCIGAR type](@id bamcigar)

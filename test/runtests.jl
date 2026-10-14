@@ -90,6 +90,57 @@ using LightBoundsErrors: LightBoundsError
     end
 end
 
+@testset "Construction from elements" for T in [CIGAR, BAMCIGAR]
+    for s in [
+            "",
+            "500S",
+            "10H",
+            "100M",
+            "5H9S1D1D1D2I9S6H",
+            "3S268435455M1=1X10N2P4I",
+        ]
+        elements = collect(CIGAR(s))
+        for x in Any[elements, view(elements, 1:length(elements))]
+            c = T(x)
+            @test c isa T
+            @test c == CIGAR(s)
+            @test (query_length(c), ref_length(c), aln_length(c)) ==
+                (query_length(CIGAR(s)), ref_length(CIGAR(s)), aln_length(CIGAR(s)))
+            @test MemoryView(c) == MemoryView(T === CIGAR ? CIGAR(s) : BAMCIGAR(CIGAR(s)))
+            @test CIGARStrings.try_from_elements(T, x) == c
+        end
+    end
+
+    for (bad, err, index) in Any[
+            ([CIGARElement(OP_S, 1), CIGARElement(OP_H, 1), CIGARElement(OP_D, 1)], Errors.InvalidHardClip, 2),
+            (
+                [CIGARElement(OP_D, 1), CIGARElement(OP_S, 1), CIGARElement(OP_I, 1), CIGARElement(OP_H, 1)],
+                Errors.InvalidSoftClip,
+                3,
+            ),
+            ([fill(CIGARElement(OP_N, 268435455), 17); CIGARElement(OP_M, 1)], Errors.IntegerOverflow, 18),
+            # Invalid elements, e.g. from uninitialized memory
+            ([CIGARElement(OP_M, 1), reinterpret(CIGARElement, 0x00000000)], Errors.ZeroLength, 2),
+            ([reinterpret(CIGARElement, 0x0000001f)], Errors.InvalidOperation, 1),
+        ]
+        e = CIGARStrings.try_from_elements(T, bad)
+        @test e isa CIGARStrings.CIGARError
+        @test e.kind == err
+        @test e.index == index
+        @test_throws CIGARStrings.CIGARError T(bad)
+    end
+
+    # Uninitialized elements must be either valid, or return an error
+    for _ in 1:100
+        x = Vector{CIGARElement}(undef, 10)
+        y = CIGARStrings.try_from_elements(T, x)
+        @test y isa Union{T, CIGARStrings.CIGARError}
+    end
+    for u in [0x00000000, 0xffffffff, 0x0000000f]
+        @test CIGARStrings.try_from_elements(T, [reinterpret(CIGARElement, u)]) isa CIGARStrings.CIGARError
+    end
+end
+
 @testset "Iteration" begin
     s = "1H4S19M33I191P9N1X22=3M1H"
     for cig in [CIGAR(s), BAMCIGAR(CIGAR(s))]
