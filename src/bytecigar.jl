@@ -5,9 +5,11 @@ A CIGAR string represents the sequence of insertions, matches and deletions
 that comprise a pairwise alignment.
 Construct a `CIGAR` from any object `x` where `MemoryView(x)` returns a
 `MemoryView{UInt8}`, i.e. any memory-backed bytearray, or string.
+Alternatively, construct it from an `AbstractVector{CIGARElement}`.
 
 Use [`CIGARStrings.try_parse`](@ref) to attempt to parse a `CIGAR` string
-without throwing an exception if the data is invalid.
+without throwing an exception if the data is invalid, and
+[`CIGARStrings.try_from_elements`](@ref) to do the same for elements.
 
 See also: [`CIGARElement`](@ref)
 
@@ -46,6 +48,11 @@ end
 
 function CIGAR(x)
     y = try_parse(CIGAR, x)
+    return y isa CIGARError ? throw(y) : y
+end
+
+function CIGAR(x::AbstractVector{CIGARElement})
+    y = try_from_elements(CIGAR, x)
     return y isa CIGARError ? throw(y) : y
 end
 
@@ -137,6 +144,17 @@ function try_parse(::Type{CIGAR}, x)::Union{CIGARError, CIGAR}
         return CIGARError(lastindex(mem), Errors.IntegerOverflow)
     end
     return unsafe_cigar(mem, n_ops % UInt32, aln_len % UInt32, ref_len % UInt32, query_len % UInt32)
+end
+
+# TODO: This is known to be up to 40% slower for short CIGARs than an optimized
+# version which validates the elements directly, and then encodes them as text,
+# since this version allocates an intermediate BAMCIGAR and makes an extra pass.
+# It is kept for its simpler implementation, since this is unlikely to be hot.
+# (An optimized version exists in commit f10141a, branch `shared-validator`).
+function try_from_elements(::Type{CIGAR}, elements::AbstractVector{CIGARElement})::Union{CIGARError, CIGAR}
+    bam = try_from_elements(BAMCIGAR, elements)
+    bam isa CIGARError && return bam
+    return CIGAR(bam)
 end
 
 function Base.print(out::IO, cigar::CIGAR)
