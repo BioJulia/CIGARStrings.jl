@@ -327,3 +327,43 @@ function unsafe_normalize(cigar::CIGAR)
     # any data that has been modified in the normalization process.
     return @inbounds @inline normalize!(cigar, newmem)
 end
+
+# Reversing all bytes of a CIGAR, then reversing the bytes of each element,
+# reverses the order of the elements, e.g. "12M3I" -> "I3M21" -> "3I12M".
+# This function does the second step, given the bytes of a CIGAR in reverse order.
+function reverse_each_element!(mem::MutableMemoryView{UInt8})
+    stop = length(mem)
+    @inbounds while stop > 0
+        # Each element now begins with its op byte, so this stays in bounds
+        start = stop
+        while mem[start] - 0x30 < 0x0a
+            start -= 1
+        end
+        next_stop = start - 1
+        while start < stop
+            (mem[start], mem[stop]) = (mem[stop], mem[start])
+            start += 1
+            stop -= 1
+        end
+        stop = next_stop
+    end
+    return mem
+end
+
+function Base.reverse(cigar::CIGAR)
+    src = MemoryView(cigar)
+    n_bytes = length(src)
+    dst = Memory{UInt8}(undef, n_bytes)
+    @inbounds for i in 1:n_bytes
+        dst[i] = src[n_bytes + 1 - i]
+    end
+    reverse_each_element!(MemoryView(dst))
+    return unsafe_cigar(ImmutableMemoryView(dst), cigar.n_ops, cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
+
+function unsafe_reverse!(cigar::CIGAR)
+    src = MemoryView(cigar)
+    mem = MemoryViews.unsafe_from_parts(MemoryViews.unsafe_memoryref(src), length(src))
+    reverse_each_element!(reverse!(mem))
+    return cigar
+end

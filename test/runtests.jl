@@ -938,6 +938,78 @@ end
     end
 end
 
+@testset "Reverse" begin
+    make(::Type{CIGAR}, s) = CIGAR(s)
+    make(::Type{BAMCIGAR}, s) = BAMCIGAR(CIGAR(s))
+
+    cases = [
+        ("", ""),
+        ("5M", "5M"),
+        ("2S5M", "5M2S"),
+        ("3H2S5M1D3M1I4M3H", "3H4M1I3M1D5M2S3H"),
+        ("10M5D3I", "3I5D10M"),
+        ("268435455M1I1D", "1D1I268435455M"),
+        ("1X1=3P2M1X9N", "9N1X2M3P1=1X"),
+    ]
+
+    @testset "reverse" for T in [CIGAR, BAMCIGAR]
+        for (input, expected) in cases
+            c = make(T, input)
+            r = reverse(c)
+            @test r isa T
+            @test r == make(T, expected)
+            @test collect(r) == reverse(collect(c))
+            @test (length(r), aln_length(r), ref_length(r), query_length(r)) ==
+                (length(c), aln_length(c), ref_length(c), query_length(c))
+            @test reverse(r) == c
+            # Input is unchanged
+            @test c == make(T, input)
+        end
+    end
+
+    @testset "reverse keeps leading zeros" begin
+        for (input, expected) in [
+                ("01M", "01M"),
+                ("003S0010M2I", "2I0010M003S"),
+                ("1M000000000005I", "000000000005I1M"),
+            ]
+            r = reverse(CIGAR(input))
+            @test MemoryView(r) == MemoryView(expected)
+            @test r == CIGAR(expected)
+            @test length(r) == length(CIGAR(input))
+        end
+    end
+
+    @testset "unsafe_reverse!" for T in [CIGAR, BAMCIGAR]
+        for (input, expected) in cases
+            c = copy(make(T, input))
+            mem = MemoryView(c)
+            r = unsafe_reverse!(c)
+            @test r isa T
+            @test r == make(T, expected)
+            @test MemoryView(r) === mem
+        end
+    end
+
+    @testset "unsafe_reverse! keeps leading zeros" begin
+        c = CIGAR(collect(b"003S0010M2I"))
+        r = unsafe_reverse!(c)
+        @test MemoryView(r) == MemoryView("2I0010M003S")
+        @test r == CIGAR("2I10M3S")
+    end
+
+    @testset "Randomized" for T in [CIGAR, BAMCIGAR]
+        for _ in 1:200
+            n = rand(0:12)
+            elements = [CIGARElement(rand([OP_M, OP_I, OP_D, OP_N, OP_P, OP_Eq, OP_X]), rand(1:2000)) for _ in 1:n]
+            c = T(elements)
+            r = reverse(c)
+            @test collect(r) == reverse(elements)
+            @test collect(unsafe_reverse!(copy(c))) == reverse(elements)
+        end
+    end
+end
+
 @testset "encode! and encode_append!" begin
     cigars = [
         CIGAR(""),

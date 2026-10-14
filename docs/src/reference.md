@@ -56,4 +56,6 @@ aligned_blocks
 normalize
 normalize!
 unsafe_normalize
+Base.reverse(::AbstractCIGAR)
+unsafe_reverse!
 ```
