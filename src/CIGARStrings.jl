@@ -156,7 +156,6 @@ primitive type CIGAROp 8 end
 
 const STRING_LUT = let
     string_lut = Memory{String}(undef, 9)
-    byte_lut = Memory{UInt8}(undef, 9)
     for (i, (name, doc)) in enumerate(
             [
                 ("M", "Alignment match or mismatch"),
@@ -172,13 +171,18 @@ const STRING_LUT = let
         )
         string_lut[i] = name
         sym = Symbol("OP_", name)
-        val = reinterpret(CIGAROp, UInt8(i - 1))
-        nm = name == "Eq" ? "=" : name
+        char = name == "Eq" ? "=" : name
         @eval begin
-            @doc $(string("`'", nm, "'`: ", doc)) const $(sym) = reinterpret(CIGAROp, $(UInt8(i - 1)))
+            @doc $(string("`'", char, "'`: ", doc)) const $(sym) = reinterpret(CIGAROp, $(UInt8(i - 1)))
         end
     end
     Tuple(string_lut)
+end
+
+function Base.Char(op::CIGAROp)
+    shift = 0x07 * reinterpret(UInt8, op)
+    u8 = (CIGAR_BYTE_LUT >> (shift & 63)) & 0x7f
+    return reinterpret(Char, UInt32(u8) << 24)
 end
 
 Base.show(io::IO, op::CIGAROp) = print(io, string("OP_", STRING_LUT[reinterpret(UInt8, op) + 0x01]))
@@ -189,6 +193,16 @@ const OP_LUT = let
         lut[char - '=' + 1] = val
     end
     NTuple{28, UInt8}(lut)
+end
+
+function Base.tryparse(::Type{CIGAROp}, x::Char)
+    # Rotate the leading byte into the lowest byte. Non-ASCII and malformed chars
+    # then have upper bits set, and are rejected by the same check as too-large chars.
+    u = bitrotate(reinterpret(UInt32, x), 8) - UInt32('=')
+    u > 0x1b && return nothing # larger than 'X' after subtracting '='
+    enc = @inbounds OP_LUT[u + 1]
+    enc > 0x08 && return nothing
+    return reinterpret(CIGAROp, enc)
 end
 
 """
@@ -235,6 +249,8 @@ end
 function Base.show(io::IO, x::CIGARElement)
     return print(io, typeof(x), '(', x.op, ", ", x.len, ')')
 end
+
+Base.print(io::IO, x::CIGARElement) = print(io, x.len, Char(x.op))
 
 function Base.getproperty(x::CIGARElement, sym::Symbol)
     return if sym === :len
