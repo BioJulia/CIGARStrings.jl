@@ -792,6 +792,7 @@ mutated is undefined behaviour in Julia.
 This mutation will also invalidate the input cigar. The invalidated cigar
 should not be used after this call. Doing so may lead to undefined behaviour,
 since the object does not follow its own invariants.
+If this function throws, the memory of `cigar` may be left partially overwritten.
 
 See also: [`normalize`](@ref), [`normalize!`](@ref), [`is_compatible`](@ref)
 
