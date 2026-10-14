@@ -7,7 +7,7 @@ export CIGAR,
     aln_to_query, aln_to_ref, Translation, count_matches,
     BAMCIGAR, AbstractCIGAR, ref, query, aln, pos_to_pos,
     unsafe_switch_memory, is_compatible, aligned_blocks,
-    normalize, unsafe_normalize, normalize!,
+    normalize, unsafe_normalize, normalize!, unsafe_reverse!,
     encode!, encode_append!
 
 public CIGARError, CIGARErrorType, Errors, try_parse, try_from_elements, outside, pos, gap,
@@ -809,6 +809,52 @@ true
 ```
 """
 function unsafe_normalize end
+
+"""
+    reverse(cigar::T)::T where {T <: AbstractCIGAR}
+
+Create a new `AbstractCIGAR` with the elements of `cigar` in reverse order.
+
+The returned cigar has newly allocated memory.
+
+See also: [`unsafe_reverse!`](@ref)
+
+# Examples
+```jldoctest
+julia> reverse(CIGAR("2S5M1D3M1I4M3H"))
+CIGAR("3H4M1I3M1D5M2S")
+```
+"""
+Base.reverse(::AbstractCIGAR)
+
+"""
+    unsafe_reverse!(cigar::T)::T where {T <: AbstractCIGAR}
+
+Reverse the order of the elements of `cigar` in-place, and return the reversed cigar,
+which uses the same memory as `cigar`.
+
+Calling `unsafe_reverse!` on a cigar will mutate its memory, even
+though a `cigar` is constructed from an `ImmutableMemoryView`.
+Callers must ensure that there are no other references to the memory
+of `cigar` which assumes that the memory is immutable.
+For example, calling this function on a `CIGAR` constructed from a
+`String` risks undefined behaviour, since observing `String`s being
+mutated is undefined behaviour in Julia.
+
+See also: [`reverse`](@ref)
+
+# Examples
+```jldoctest
+julia> c = CIGAR(collect(b"2S5M1D3M3H"));
+
+julia> c2 = unsafe_reverse!(c)
+CIGAR("3H3M1D5M2S")
+
+julia> MemoryView(c2) === MemoryView(c)
+true
+```
+"""
+function unsafe_reverse! end
 
 """
     try_parse(T::Type{CIGAR}, x)::Union{CIGAR, CIGARError}

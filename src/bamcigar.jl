@@ -255,3 +255,34 @@ function unsafe_normalize(cigar::BAMCIGAR)
     # See comment in `unsafe_normalize(::CIGAR)` for why aliasing is valid
     return @inbounds @inline normalize!(cigar, newmem)
 end
+
+function Base.reverse(cigar::BAMCIGAR)
+    src = MemoryView(cigar)
+    n_bytes = length(src)
+    dst = Memory{UInt8}(undef, n_bytes)
+    GC.@preserve src dst begin
+        src_ptr = Ptr{UInt32}(pointer(src))
+        dst_ptr = Ptr{UInt32}(pointer(dst))
+        for offset in 0:4:(n_bytes - 4)
+            unsafe_store!(dst_ptr + offset, unsafe_load(src_ptr + (n_bytes - 4 - offset)))
+        end
+    end
+    return unsafe_bamcigar(ImmutableMemoryView(dst), cigar.aln_len, cigar.ref_len, cigar.query_len)
+end
+
+function unsafe_reverse!(cigar::BAMCIGAR)
+    mem = MemoryView(cigar)
+    n_bytes = length(mem)
+    GC.@preserve mem begin
+        ptr = Ptr{UInt32}(pointer(mem))
+        # Swap the i'th element from the start with the i'th from the end
+        for offset in 0:4:(4 * (n_bytes >>> 3) - 4)
+            lo = ptr + offset
+            hi = ptr + (n_bytes - 4 - offset)
+            a = unsafe_load(lo)
+            unsafe_store!(lo, unsafe_load(hi))
+            unsafe_store!(hi, a)
+        end
+    end
+    return cigar
+end
