@@ -120,6 +120,39 @@ end
     end
 end
 
+@testset "CIGAROp <-> Char" begin
+    ops = [OP_M, OP_I, OP_D, OP_N, OP_S, OP_H, OP_P, OP_Eq, OP_X]
+    for (op, c) in zip(ops, "MIDNSHP=X")
+        @test Char(op) === c
+        @test tryparse(CIGAROp, c) === op
+    end
+
+    # Characters between '=' and 'X' which are not ops, and the bounds just outside
+    for c in setdiff('<':'Y', "MIDNSHP=X")
+        @test tryparse(CIGAROp, c) === nothing
+    end
+    for c in ['\0', '0', '9', '*', 'm', 'x', '~', '\x7f', 'é', 'Ͷ', '∀', '😀', typemax(Char)]
+        @test tryparse(CIGAROp, c) === nothing
+    end
+    # Malformed chars whose leading byte is a valid op
+    for u in [0x4d000001, 0x4d800000, 0x3dffffff, 0x58000080]
+        @test tryparse(CIGAROp, reinterpret(Char, u)) === nothing
+    end
+end
+
+@testset "Printing CIGARElement" begin
+    @test string(CIGARElement(OP_M, 1)) == "1M"
+    @test string(CIGARElement(OP_Eq, 12)) == "12="
+    @test string(CIGARElement(OP_X, 0x0fffffff)) == "268435455X"
+    for s in ["15M1=9D", "5S1=3I9I41N13X5P16S4H"]
+        c = CIGAR(s)
+        @test join(c) == s
+        @test join(BAMCIGAR(c)) == s
+    end
+    # show is unaffected
+    @test repr(CIGARElement(OP_D, 3)) == string(CIGARElement, "(OP_D, 3)")
+end
+
 @testset "Writing" begin
     for s in [
             "",
@@ -451,7 +484,7 @@ end
             rand(Bool) && push!(elements, CIGARElement(OP_S, rand(1:3)))
             rand(Bool) && pushfirst!(elements, CIGARElement(OP_H, rand(1:3)))
             rand(Bool) && push!(elements, CIGARElement(OP_H, rand(1:3)))
-            c = CIGAR(join(string(e.len, e.op == OP_Eq ? "=" : last(string(e.op))) for e in elements))
+            c = CIGAR(join(elements))
             for T in [CIGAR, BAMCIGAR], in in coords, along in coords
                 cc = T(c)
                 blocks = to_vec(in, along, cc)
