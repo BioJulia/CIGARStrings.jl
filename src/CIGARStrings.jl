@@ -962,7 +962,10 @@ Base.length(x::PositionMapper) = length(x.integers)
 Base.eltype(::Type{<:PositionMapper}) = Pair{Int, Translation}
 Base.size(x::PositionMapper) = size(x.integers)
 
-function Base.iterate(mapper::PositionMapper)
+# Inlined for the same reason as `iterate(::AlignedBlocks)`: `_iterate` makes these too
+# large for the compiler to inline, and the call passes the 56-byte state via the stack:
+# ~6x slower when mapping 15 positions over a `BAMCIGAR`.
+@inline function Base.iterate(mapper::PositionMapper)
     (target, next_integer_state) = let
         it = iterate(mapper.integers)
         it === nothing && return nothing
@@ -984,7 +987,7 @@ function Base.iterate(mapper::PositionMapper)
 end
 
 
-function Base.iterate(mapper::PositionMapper, state)
+@inline function Base.iterate(mapper::PositionMapper, state)
     (integer_state, last_integer, anchor, element, cigar_state) = state
     # If no more integers, done
     (target, next_integer_state) = let
@@ -1324,9 +1327,12 @@ function aligned_blocks(in::Coordinate, along::Coordinate, cigar::AbstractCIGAR)
     return AlignedBlocks(cigar, in_mask & along_mask, in_mask & ~along_mask)
 end
 
-Base.iterate(x::AlignedBlocks) = iterate_blocks(x, iterate(x.cigar), 0)
+# Inlined, since `iterate_blocks` makes these too large for the compiler to inline.
+# Called, each iteration costs a call and passes the iterator and result via the stack:
+# 2.5x slower for a single-element `BAMCIGAR`.
+@inline Base.iterate(x::AlignedBlocks) = iterate_blocks(x, iterate(x.cigar), 0)
 
-function Base.iterate(x::AlignedBlocks, state)
+@inline function Base.iterate(x::AlignedBlocks, state)
     (cigar_state, pos) = state
     return iterate_blocks(x, iterate(x.cigar, cigar_state), pos)
 end
