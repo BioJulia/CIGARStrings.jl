@@ -39,10 +39,10 @@ CIGAROp
 ```
 
 Whether an operation consumes bases of the query, the reference, and the alignment
-can be checked with [`CIGARStrings.consumes`](@ref):
+can be checked with [`consumes`](@ref):
 
 ```@docs
-CIGARStrings.consumes
+consumes
 ```
 
 ## CIGARs
