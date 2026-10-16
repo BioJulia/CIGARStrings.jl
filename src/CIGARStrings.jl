@@ -8,10 +8,10 @@ export CIGAR,
     BAMCIGAR, AbstractCIGAR, ref, query, aln, pos_to_pos,
     unsafe_switch_memory, is_compatible, aligned_blocks,
     normalize, unsafe_normalize, normalize!, unsafe_reverse!,
-    encode!, encode_append!
+    encode!, encode_append!, consumes
 
 public CIGARError, CIGARErrorType, Errors, try_parse, try_from_elements, outside, pos, gap,
-    TranslationKind, PositionMapper, AlignedBlocks, Coordinate, consumes
+    TranslationKind, PositionMapper, AlignedBlocks, Coordinate
 
 using MemoryViews: MemoryViews, ImmutableMemoryView, MemoryView, MutableMemoryView
 
@@ -129,7 +129,7 @@ then the positions are `(A, B+9, C+9)` after.
 | 7 | `Q R A`  |`OP_Eq`  | =    | Alignment match, not mismatch                        |
 | 8 | `Q R A`  |`OP_X`   | X    | Alignment mismatch                                   |
 
-See also: [`CIGARElement`](@ref), [`CIGARStrings.consumes`](@ref)
+See also: [`CIGARElement`](@ref), [`consumes`](@ref)
 
 # Extended help
 * `M` means a match or a mismatch. By default, most programs will emit `M`
@@ -144,8 +144,8 @@ See also: [`CIGARElement`](@ref), [`CIGARStrings.consumes`](@ref)
   They differ only in whether the clipped bases, i.e. the ends of the query sequence
   not part of the alignment, are present in the query sequence.
   For soft clip, the sequence is present in the query, but not for hard clip.
-  Soft clip is preferred, and hard clip is only used in rare cases where removing
-  part of the query sequence can lead to memory savings, or fo chimeric
+  Soft clip is preferred, and hard clip is usually used where removing
+  part of the query sequence can lead to memory savings, or for chimeric
   alignments.
 * `P` is only used for a multiple sequence alignment. If a third sequence contains an
   insertion relative to both the query and the reference, the query has a
@@ -490,10 +490,10 @@ See also: [`CIGAROp`](@ref), [`query_length`](@ref), [`ref_length`](@ref), [`aln
 
 # Examples
 ```jldoctest
-julia> CIGARStrings.consumes(OP_S)
+julia> consumes(OP_S)
 (query = true, ref = false, aln = false)
 
-julia> CIGARStrings.consumes(OP_M)
+julia> consumes(OP_M)
 (query = true, ref = true, aln = true)
 ```
 """
@@ -610,7 +610,7 @@ end
 Get the number of biosymbols in the query of the `CIGAR`. This is the same
 as the lengths of all `CIGARElement`s of type `M`, `I`, `S`, `=` and `X`.
 
-See also: [`ref_length`](@ref), [`aln_length`](@ref), [`CIGARStrings.consumes`](@ref)
+See also: [`ref_length`](@ref), [`aln_length`](@ref), [`consumes`](@ref)
 
 # Example
 ```jldoctest
@@ -627,7 +627,7 @@ function query_length end
 Get the number of biosymbols in the reference of the `CIGAR`. This is the same
 as the lengths of all `CIGARElement`s of type `M`, `D`, `N`, `=` and `X`.
 
-See also: [`query_length`](@ref), [`aln_length`](@ref), [`CIGARStrings.consumes`](@ref)
+See also: [`query_length`](@ref), [`aln_length`](@ref), [`consumes`](@ref)
 
 # Example
 ```jldoctest
@@ -645,7 +645,7 @@ padding and skips are not part of the alignment, but still part of the CIGAR.
 Therefore, the alignment length is the same as the lengths of all `CIGARElement`s
 of type `M`, `I`, `D`, `=` and `X`.
 
-See also: [`query_length`](@ref), [`ref_length`](@ref), [`CIGARStrings.consumes`](@ref)
+See also: [`query_length`](@ref), [`ref_length`](@ref), [`consumes`](@ref)
 
 # Example
 ```jldoctest
@@ -792,7 +792,8 @@ mutated is undefined behaviour in Julia.
 This mutation will also invalidate the input cigar. The invalidated cigar
 should not be used after this call. Doing so may lead to undefined behaviour,
 since the object does not follow its own invariants.
-If this function throws, the memory of `cigar` may be left partially overwritten.
+If this function throws (see docstring of `normalize`),
+the memory of `cigar` may be left partially overwritten.
 
 See also: [`normalize`](@ref), [`normalize!`](@ref), [`is_compatible`](@ref)
 
@@ -814,9 +815,8 @@ function unsafe_normalize end
 """
     reverse(cigar::T)::T where {T <: AbstractCIGAR}
 
-Create a new `AbstractCIGAR` with the elements of `cigar` in reverse order.
-
-The returned cigar has newly allocated memory.
+Create a new `AbstractCIGAR` of the same type as the input `cigar`
+with the elements of `cigar` in reverse order.
 
 See also: [`unsafe_reverse!`](@ref)
 
@@ -861,8 +861,8 @@ function unsafe_reverse! end
     try_parse(T::Type{CIGAR}, x)::Union{CIGAR, CIGARError}
     try_parse(T::Type{BAMCIGAR}, x::AbstractArray{UInt8})::Union{BAMCIGAR, CIGARError}
 
-Cast `x` to a `MemoryView{UInt8}`, and try parsing a [`T`](@ref) from it.
-If the parsing is unsuccessful, return a [`CIGARError`](@ref)
+Construct a `MemoryView{UInt8}` from `x`, and try parsing a `T` from it.
+If the parsing is unsuccessful, return a [`CIGARError`](@ref).
 
 # Examples
 ```jldoctest
@@ -882,7 +882,7 @@ See also: [`CIGARStrings.try_from_elements`](@ref)
 function try_parse end
 
 """
-    try_from_elements(T::Type{<:Union{CIGAR, BAMCIGAR}}, x::AbstractVector{CIGARElement})::Union{T, CIGARError}
+    try_from_elements(T::Type{<:AbstractCIGAR}, x::AbstractVector{CIGARElement})::Union{T, CIGARError}
 
 Try constructing a `T` from the elements in `x`.
 If the elements do not form a valid CIGAR, return a [`CIGARError`](@ref),

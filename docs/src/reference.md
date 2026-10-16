@@ -13,7 +13,7 @@ CIGAR
 BAMCIGAR
 CIGARElement
 CIGAROp
-CIGARStrings.consumes
+consumes
 Translation
 CIGARStrings.TranslationKind
 CIGARStrings.CIGARError

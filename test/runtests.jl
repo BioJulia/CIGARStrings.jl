@@ -463,7 +463,7 @@ end
         kept = Int[]
         n = 0
         for e in c
-            consumed = values(CIGARStrings.consumes(e.op))
+            consumed = values(consumes(e.op))
             consumed[idx(in)] || continue
             for _ in 1:e.len
                 n += 1
