@@ -14,6 +14,7 @@ makedocs(;
     pages = [
         "Home" => "index.md",
         "Reference" => "reference.md",
+        "Migrating from 0.2 to 0.3" => "migration.md",
     ],
     authors = "Jakob Nybo Nissen",
     checkdocs = :public,
